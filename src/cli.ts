@@ -37,6 +37,7 @@ interface PageCliOptions extends CommonCliOptions {
   raw?: boolean;
   sections?: boolean;
   html?: boolean;
+  dict?: boolean;
 }
 
 interface LeagueCliOptions extends CommonCliOptions {
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
     .option("-g, --game <game>", "game version: poe1|poe2", "poe1")
     .option("-s, --source <source>", "data source: both|poedb|wiki", "both")
     .option("-l, --lang <lang>", "database language (inferred from the query by default: Chinese -> cn, otherwise us)")
-    .option("-n, --limit <n>", "maximum number of wiki results", "8")
+    .option("-n, --limit <n>", "maximum results per source", "8")
     .option("-j, --json", "print machine-readable JSON")
     .option("--no-cache", "skip the local cache")
     .option("--timeout <ms>", "request timeout in milliseconds", "20000")
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
     .option("--raw", "print only the body markdown, without the title and metadata")
     .option("--html", "print raw HTML instead of markdown (scripts, styles and navigation are stripped)")
     .option("--sections", "also print a heading outline")
+    .option("--no-dict", "skip the local name dictionary and always resolve through search")
     .action(async (target: string, options: PageCliOptions) => {
       if (options.html === true && options.raw === true) {
         throw new UsageError(
@@ -118,6 +120,7 @@ async function main(): Promise<void> {
         maxChars,
         sections: options.sections === true,
         html: options.html === true,
+        noDict: options.dict === false,
       });
       printPage(document, options.json === true, options.raw === true);
     });

@@ -1,11 +1,14 @@
 import { NotFoundError, UsageError } from "../http.js";
+import { resolveAlias } from "../aliases.js";
+import { resolveDictSlug } from "../dict.js";
 import { extractSections } from "../markdown.js";
 import {
   fetchPage as fetchPoedbPage,
   fetchPageHtml as fetchPoedbPageHtml,
   inferLang,
   localeFromUrl,
-  resolve as resolvePoedb,
+  resolveDetailed as resolvePoedbDetailed,
+  type PoedbSearchHit,
 } from "../sources/poedb.js";
 import { fetchPage as fetchWikiPage, fetchPageHtml as fetchWikiPageHtml, titleFromUrl } from "../sources/poewiki.js";
 import { gameFromHost, sitesFor, type Game } from "../sites.js";
@@ -20,7 +23,10 @@ export interface PageOptions {
   maxChars: number;
   sections: boolean;
   html: boolean;
+  noDict: boolean;
 }
+
+const HAN_PATTERN = /\p{Script=Han}/u;
 
 export type PageResult = PageDocument | PageHtmlDocument;
 
@@ -147,11 +153,106 @@ async function load(parsed: Target, options: PageOptions): Promise<LoadedPage> {
     return loadWikiTitle(parsed.title, game, options, common);
   }
 
-  const hit = await resolvePoedb(parsed.title, { ...common, game, lang: options.lang });
-  if (!hit) {
-    return loadWikiTitle(parsed.title, game, options, common);
+  const dictAttempt = await loadDbByDictOrAlias(parsed.title, game, options, common);
+  if (dictAttempt.page) {
+    return dictAttempt.page;
   }
-  return loadDbUrl(hit.url, game, options, common, hit.locale);
+
+  const effective = dictAttempt.effective;
+  const note = aliasNote(parsed.title, effective, dictAttempt.aliasUsed);
+
+  const detail = await resolvePoedbDetailed(effective, { ...common, game, lang: options.lang });
+  if (detail.hit) {
+    return loadDbUrl(detail.hit.url, game, options, common, detail.hit.locale);
+  }
+  throwIfAmbiguous(detail.candidates, effective, game, note);
+
+  const direct = await loadDbByDirectSlug(effective, game, options, common);
+  if (direct) {
+    return direct;
+  }
+
+  try {
+    return await loadWikiTitle(effective, game, options, common);
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      const sites = sitesFor(game);
+      throw new NotFoundError(
+        `${sites.dbName} and ${sites.wikiName} have no page for "${effective}".`,
+        `${notFoundHint(effective, options.lang, sites.dbName)}${note}`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * 有些英文标题（如 "Sirus, Awakener of Worlds"）在 poedb 搜索里只会跳回首页，
+ * 但按标题直接拼 slug 就能打开页面。作为搜索与 wiki 兜底之间的一次确定性尝试。
+ */
+async function loadDbByDirectSlug(
+  title: string,
+  game: Game,
+  options: PageOptions,
+  common: { timeoutMs: number; noCache: boolean },
+): Promise<LoadedPage | null> {
+  if (HAN_PATTERN.test(title)) {
+    return null;
+  }
+
+  const trimmed = title.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const locale = inferLang(title, options.lang);
+  const sites = sitesFor(game);
+  const slug = trimmed.replace(/\s+/g, "_");
+
+  try {
+    return await loadDbUrl(`${sites.dbOrigin}/${locale}/${slug}`, game, options, common, locale);
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * 中文标题先查本地词典，省掉一次搜索跳转。词典本身失败、未命中或页面 404
+ * 都返回 null，由调用方继续走搜索逻辑。
+ */
+async function loadDbByDict(
+  title: string,
+  game: Game,
+  options: PageOptions,
+  common: { timeoutMs: number; noCache: boolean },
+): Promise<LoadedPage | null> {
+  if (options.noDict || !HAN_PATTERN.test(title)) {
+    return null;
+  }
+
+  const locale = inferLang(title, options.lang);
+  const slug = await resolveDictSlug(title, {
+    game,
+    lang: locale,
+    timeoutMs: options.timeoutMs,
+    noCache: options.noCache,
+  });
+  if (!slug) {
+    return null;
+  }
+
+  const sites = sitesFor(game);
+  try {
+    return await loadDbUrl(`${sites.dbOrigin}/${locale}/${slug}`, game, options, common, locale);
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function loadDbTitle(
@@ -161,14 +262,91 @@ async function loadDbTitle(
   common: { timeoutMs: number; noCache: boolean },
 ): Promise<LoadedPage> {
   const sites = sitesFor(game);
-  const hit = await resolvePoedb(title, { ...common, game, lang: options.lang });
-  if (!hit) {
-    throw new NotFoundError(
-      `${sites.dbName} has no page for "${title}" (locale: ${inferLang(title, options.lang)}).`,
-      `${sites.dbName} search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.`,
-    );
+
+  const dictAttempt = await loadDbByDictOrAlias(title, game, options, common);
+  if (dictAttempt.page) {
+    return dictAttempt.page;
   }
-  return loadDbUrl(hit.url, game, options, common, hit.locale);
+
+  const effective = dictAttempt.effective;
+  const locale = inferLang(effective, options.lang);
+  const note = aliasNote(title, effective, dictAttempt.aliasUsed);
+
+  const detail = await resolvePoedbDetailed(effective, { ...common, game, lang: options.lang });
+  if (detail.hit) {
+    return loadDbUrl(detail.hit.url, game, options, common, detail.hit.locale);
+  }
+  throwIfAmbiguous(detail.candidates, effective, game, note);
+
+  const direct = await loadDbByDirectSlug(effective, game, options, common);
+  if (direct) {
+    return direct;
+  }
+
+  throw new NotFoundError(
+    `${sites.dbName} has no page for "${effective}" (locale: ${locale}).`,
+    `${notFoundHint(effective, options.lang, sites.dbName)}${note}`,
+  );
+}
+
+/**
+ * 词典优先，未命中时才查别名表；别名只用于补充词典缺口，不能覆盖精确命中
+ * （例如「女武神」「虚空」在词典里是真实物品名）。
+ */
+async function loadDbByDictOrAlias(
+  title: string,
+  game: Game,
+  options: PageOptions,
+  common: { timeoutMs: number; noCache: boolean },
+): Promise<{ page: LoadedPage | null; effective: string; aliasUsed: boolean }> {
+  const direct = await loadDbByDict(title, game, options, common);
+  if (direct) {
+    return { page: direct, effective: title, aliasUsed: false };
+  }
+
+  const alias = resolveAlias(title);
+  if (!alias) {
+    return { page: null, effective: title, aliasUsed: false };
+  }
+
+  return {
+    page: await loadDbByDict(alias, game, options, common),
+    effective: alias,
+    aliasUsed: true,
+  };
+}
+
+function aliasNote(original: string, effective: string, used: boolean): string {
+  return used ? ` "${original}" was interpreted as "${effective}".` : "";
+}
+
+/**
+ * 结果页给出多个候选时不能替用户挑一个：名称相近的条目（如「希鲁斯风暴」与
+ * 「诸界觉者希鲁斯」）指向完全不同的页面，必须显式暴露歧义。
+ */
+function throwIfAmbiguous(candidates: PoedbSearchHit[], title: string, game: Game, note = ""): void {
+  if (candidates.length <= 1) {
+    return;
+  }
+
+  const sites = sitesFor(game);
+  const shown = candidates
+    .slice(0, 3)
+    .map((candidate) => candidate.title)
+    .join(", ");
+  const remaining = candidates.length - Math.min(3, candidates.length);
+  const more = remaining > 0 ? ` and ${remaining} more` : "";
+
+  throw new NotFoundError(
+    `${sites.dbName} has multiple matches for "${title}": ${shown}${more}.`,
+    `Use a full URL, or pick one of the titles above. ${sites.wikiName} was not searched because ${sites.dbName} returned several matches.${note}`,
+  );
+}
+
+function notFoundHint(title: string, explicit: Lang | undefined, dbName: string): string {
+  return inferLang(title, explicit) === "cn"
+    ? "Try a shorter keyword, or use the search command to see candidate titles."
+    : `${dbName} search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.`;
 }
 
 async function loadDbUrl(

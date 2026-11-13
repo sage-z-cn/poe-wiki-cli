@@ -1,5 +1,6 @@
 import { NotFoundError } from "../http.js";
-import { inferLang, resolve as resolvePoedb } from "../sources/poedb.js";
+import { resolveAlias } from "../aliases.js";
+import { inferLang, resolveDetailed as resolvePoedbDetailed } from "../sources/poedb.js";
 import { search as searchWiki } from "../sources/poewiki.js";
 import { sitesFor, type Game } from "../sites.js";
 import type { Lang, SearchResult, SearchSource } from "../types.js";
@@ -26,20 +27,45 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
   const results: SearchResult[] = [];
 
   if (options.source !== "wiki") {
-    const hit = await resolvePoedb(query, {
+    let detail = await resolvePoedbDetailed(query, {
       game: options.game,
       lang: options.lang,
       timeoutMs: options.timeoutMs,
       noCache: options.noCache,
     });
-    if (hit) {
+
+    // 原词完全查不到时才用别名再试一次；wiki 部分仍用原词。
+    if (!detail.hit && detail.candidates.length === 0) {
+      const alias = resolveAlias(query);
+      if (alias) {
+        detail = await resolvePoedbDetailed(alias, {
+          game: options.game,
+          lang: options.lang,
+          timeoutMs: options.timeoutMs,
+          noCache: options.noCache,
+        });
+      }
+    }
+
+    if (detail.hit) {
       results.push({
         game: options.game,
         source: sites.dbName,
         kind: "page",
-        title: hit.title,
-        url: hit.url,
+        title: detail.hit.title,
+        url: detail.hit.url,
       });
+    } else {
+      // 搜索结果页里的候选都是确定存在的页面，按 --limit 截断后逐个列出。
+      for (const candidate of detail.candidates.slice(0, options.limit)) {
+        results.push({
+          game: options.game,
+          source: sites.dbName,
+          kind: "page",
+          title: candidate.title,
+          url: candidate.url,
+        });
+      }
     }
   }
 
@@ -49,7 +75,7 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
       timeoutMs: options.timeoutMs,
       noCache: options.noCache,
     });
-    for (const hit of hits) {
+    for (const hit of hits.slice(0, options.limit)) {
       results.push({
         game: options.game,
         source: sites.wikiName,

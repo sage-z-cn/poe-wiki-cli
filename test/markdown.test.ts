@@ -145,3 +145,26 @@ test("表格单元格内的多个链接与文本之间保留空格", () => {
   const markdown = htmlToMarkdown(html, { baseUrl: "https://www.poewiki.net/wiki/Endgame" });
   assert.match(markdown, /Removed \[A\]\(https:\/\/www\.poewiki\.net\/wiki\/A\) and \[B\]\(https:\/\/www\.poewiki\.net\/wiki\/B\)\./);
 });
+
+test("extractSections 过滤 poedb 怪物词缀伪标题，只保留真实章节", () => {
+  const markdown = [
+    "## monster no drops or experience [1]",
+    "## monster dropped item rarity +% [15000]",
+    "## monster slain experience +% [100]",
+    "## cannot be stunned for ms after stun finished [4000]",
+    "## cannot be stunned while stunned [1]",
+    "## monster gauntlet ruin enabled [1]",
+    "## 无法被击退",
+    "## Action Speed cannot be modified to below 50% of base value",
+    "## Object Type",
+    "## 行动速度不能调整至低于基础值的 50%",
+    "## 贤主 传奇 /13",
+    "## 掉落",
+    "## Sirus Topic /3",
+  ].join("\n");
+
+  assert.deepEqual(
+    extractSections(markdown).map((section) => section.title),
+    ["贤主 传奇 /13", "掉落", "Sirus Topic /3"],
+  );
+});

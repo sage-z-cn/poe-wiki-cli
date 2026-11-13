@@ -64,7 +64,9 @@ poe-wiki-cli league --game poe2
 
 ### `search <query...>`
 
-默认同时查两个站点：先做 poedb 的跳转式搜索，命中则作为第一条结果（`source: "poedb"`, `kind: "page"`），再查 poewiki 的搜索接口（`generator=search` + `prop=extracts`，一次请求拿到条目开头的纯文本简介）。
+默认同时查两个站点：先查 poedb——它要么 302 直跳页面（一条结果），要么返回服务端渲染的结果页，由 CLI 解析成去重后的候选列表（`source: "poedb"`, `kind: "page"`）；再查 poewiki 的搜索接口（`generator=search` + `prop=extracts`，一次请求拿到条目开头的纯文本简介）。
+
+poedb 的候选按页面顺序列出，不做排序——这是刻意的：第一条不一定是要找的页面，例如 `希鲁斯` 的第一条是「希鲁斯风暴」，第二条才是「诸界觉者希鲁斯」。
 
 ```bash
 $ poe-wiki-cli search fireball --limit 1
@@ -85,7 +87,7 @@ poedb 未命中不算错误（poewiki 通常仍有结果）；两边都为空才
 | `-g, --game <poe1\|poe2>` | 资料库版本：poe1 → poedb/poewiki，poe2 → poe2db/poe2wiki，默认 `poe1` |
 | `-s, --source <both\|poedb\|wiki>` | 数据源，默认 `both` |
 | `-l, --lang <us\|tw\|cn\|kr\|ru\|jp\|fr\|de\|th\|pt\|sp>` | 资料库语言，默认按查询词推断 |
-| `-n, --limit <n>` | wiki 结果上限，默认 8 |
+| `-n, --limit <n>` | 每个来源的结果上限，默认 8 |
 | `-j, --json` | 输出 JSON |
 | `--no-cache` | 跳过本地缓存 |
 | `--timeout <ms>` | 请求超时，默认 20000 |
@@ -96,7 +98,7 @@ poedb 未命中不算错误（poewiki 通常仍有结果）；两边都为空才
 
 - 完整 URL：`https://poedb.tw/cn/Headhunter`、`https://www.poewiki.net/wiki/Endgame`、`https://poe2db.tw/us/Waystone`（站点与游戏版本都由 host 决定，会覆盖 `--game`）
 - 站点前缀：`poedb:Headhunter`、`wiki:Iron Reflexes`、`poe2db:Waystone`、`poe2wiki:Endgame`
-- 裸标题：默认先尝试 db 站，未命中再取 wiki
+- 裸标题：默认先尝试 db 站，未命中再取 wiki。若 db 站返回多个候选且没有一条与标题完全一致，命令会带着候选列表报错，而不是猜一个。
 
 ```bash
 $ poe-wiki-cli page Headhunter --source poedb
@@ -128,6 +130,7 @@ Requires Level 40
 | `--max-chars <n>` | 正文上限，默认 40000；`--html` 时默认 0（不截断） |
 | `--raw` | 只输出正文，省略标题与元信息 |
 | `--sections` | 额外输出章节大纲（JSON 下为 `sections` 数组） |
+| `--no-dict` | 跳过本地名词词典，中文标题改走搜索解析 |
 | `--html` | 直接输出原始 HTML，不做 markdown 转换（会去掉脚本/样式/导航等噪声） |
 | `-j, --json` | 输出 JSON |
 | `--no-cache` | 跳过本地缓存 |
@@ -290,6 +293,24 @@ poe-wiki-cli page 獵首 --lang tw      # 繁体中文站
 
 JSON 与文本输出都会带上实际使用的 `locale`。注意 poedb 中文页的 URL slug 仍是英文：`https://poedb.tw/cn/Headhunter`。
 
+### 名词词典
+
+当中文裸标题能唯一对应一个页面时，`page` 会跳过「搜索跳转」这一次请求：下载 poedb 的自动补全词典（`中文名 → 页面 slug`），直接拼出 `/{lang}/{slug}`。词典按语言分文件——`cn` 7,186 条（526 KB）、`tw` 7,814 条（568 KB）、`us` 746 KB——只会下载当前查询用到的那一份。
+
+```
+poedb.tw/cn/  →  cdn.poedb.tw/js/poedb_header.<hash>.js  →  autocomplete_cn.<hash>.json
+```
+
+这条链是从站点自身发现的，所以拿到的永远是当前构建对应的词典，而不是仓库里钉死的副本。缓存：词典 **20 小时**、header JS 24 小时、首页 1 小时。
+
+- 只对含汉字的裸标题生效；完整 URL 与 `poedb:` / `poe2db:` 前缀不受影响。
+- 任何一步失败（下载、解析、拼出的 slug 返回 404）都静默回退到原有搜索逻辑。
+- `--no-dict` 可关闭这条捷径。
+- 词典是 PoE1 数据，PoE2 独有名称（如引路石）查不到，会自动走搜索。
+- 词典不可能收录的词由一张人工别名表兜底——旧译名与社区简称，如 `病人 → 病患`、`护理师 → 照料者`、`法血 → 法师之血`、`正火 → 正义之火`、`闪打 → 闪电打击`、`刀阵 → 飞刃风暴`。别名**只在词典没有精确条目时生效**，所以同名不同物不会被抢走：`女武神` 仍是戒指 Valyrium，`虚空` 仍是手套 Null and Void。
+
+20 小时窗口内的首次查询会下载约 500 KB，之后不再产生网络开销。
+
 ## 输出与退出码
 
 | 退出码 | 含义 |
@@ -319,6 +340,8 @@ Hint: poedb search is case-sensitive; try a shorter English keyword, or pass --l
 - 其它平台：`$XDG_CACHE_HOME/poe-wiki-cli`，未设置时 `~/.cache/poe-wiki-cli`
 
 每个 URL 一个 `<sha256(url)>.json`，内容 `{url, fetchedAt, body}`。TTL：页面 3600 秒，搜索与 `league` 300 秒。缓存读写失败会静默降级，不影响查询；`--no-cache` 既不读也不写。
+
+写入时会顺手清理：删除 7 天前的条目；若清理后仍超过 500 个，按修改时间从旧到新删到 500。清理失败一律忽略。`--sections` 也会过滤 poedb 的词缀型伪标题（含 `[15000]` 这类标记、`monster …`、`cannot be …`），目录里只保留真正的章节。
 
 ## 为什么不能用 Mozilla 开头的 UA
 

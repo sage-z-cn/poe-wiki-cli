@@ -188,11 +188,33 @@ export function extractSections(markdown: string): Section[] {
   const sections: Section[] = [];
   for (const line of markdown.split("\n")) {
     const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
-    if (match) {
+    if (match && !isNoiseHeading(match[2])) {
       sections.push({ level: match[1].length, title: match[2] });
     }
   }
   return sections;
+}
+
+/**
+ * poedb 把怪物词缀也渲染成 h5/h6，目录里会冒出大量 `monster ... [15000]` 之类
+ * 的伪标题。目录只保留真正的章节名，正文不受影响。
+ */
+function isNoiseHeading(title: string): boolean {
+  const lower = title.toLowerCase();
+  if (/\[[\d,\s-]+\]/.test(title)) {
+    return true;
+  }
+  if (lower.startsWith("monster ") || lower.startsWith("cannot be ") || title.startsWith("无法")) {
+    return true;
+  }
+  if (lower.includes(" no drops ")) {
+    return true;
+  }
+  if (lower === "object type") {
+    return true;
+  }
+  // 「行动速度不能调整至低于基础值的 50%」及其英文原文都是怪物词缀，不是章节。
+  return title.includes("不能调整至低于基础值") || /cannot be modified to below/i.test(title);
 }
 
 export function normalizeMarkdown(text: string): string {

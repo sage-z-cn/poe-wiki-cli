@@ -57,7 +57,7 @@ poe-wiki-cli search fireball --game poe2  # PoE2: poe2db + poe2wiki
 
 Notes:
 
-- **poedb's "search" is a redirect, not a result list.** A hit takes you straight to that page, so poedb contributes at most one result. A miss is not an error — the other source still answers.
+- **poedb's "search" is a redirect, but not always.** An exact hit redirects to that page (one result); a fuzzy query returns a server-rendered result page, which the CLI parses into deduplicated candidates **in page order, without ranking**. Treat the order as a hint, not an answer — for `希鲁斯` the first candidate is `希鲁斯风暴`, the second is `诸界觉者希鲁斯`. A miss is not an error — the other source still answers.
 - poedb lookups are inconsistently case-sensitive (`headhunter` resolves, `Headhunter` does not). The CLI retries with a lowercased variant automatically, so you don't have to care.
 - Chinese queries only work against `cn` and English queries only against `us`. The CLI detects CJK or Han characters and picks the locale; override with `--lang tw` for Traditional Chinese, or any of `us|tw|cn|kr|ru|jp|fr|de|th|pt|sp`.
 - `--source both|poedb|wiki` selects which site to query; default is both.
@@ -75,6 +75,7 @@ poe-wiki-cli page Headhunter --raw                 # drop the metadata header
 poe-wiki-cli page "https://poedb.tw/us/" --html    # raw HTML instead of markdown (untruncated by default)
 poe-wiki-cli page Waystone --game poe2             # PoE2 db page
 poe-wiki-cli page "https://poe2wiki.net/wiki/Endgame"   # game inferred from host
+poe-wiki-cli page 猎首 --no-dict                    # skip the name dictionary
 ```
 
 Output shape:
@@ -90,6 +91,9 @@ Output shape:
 - The body is converted markdown: headings, lists and tables survive; navigation, ads, scripts and images are stripped.
 - Bodies longer than `--max-chars` (default 40000) are truncated with an explicit notice at the end — nothing disappears silently.
 - Index pages are enormous (`/us/Skill_Gems` on poedb is over 1 MB; on poe2db `/us/Support_Gems` is ~3.6 MB and `/us/Skill_Gems` ~2.1 MB). **Search for the specific entry instead of pulling the whole page**, or cap it with `--max-chars`.
+- Chinese bare titles are resolved through a locally cached name dictionary (poedb autocomplete, 20-hour TTL) that maps 中文名 → page slug, which skips the search round-trip and its case-sensitivity quirks. Any failure falls back to search; `--no-dict` forces the search path. The dictionary is PoE1 data, so PoE2-only names (e.g. waystone) just fall back.
+- A small curated alias table covers names the dictionary never carries (old translations and community shorthand: `病人 → 病患`, `护理师 → 照料者`, `法血 → 法师之血`, `正火 → 正义之火`, `闪打 → 闪电打击`, `刀阵 → 飞刃风暴`). Aliases apply **only when the dictionary has no exact entry**, so genuine same-name items stay put — `女武神` is the ring Valyrium, `虚空` is the gloves Null and Void.
+- If the db site returns several candidates and none matches the title exactly, `page` **fails with the candidate list** instead of guessing. Re-run with `search`, or pass a full URL — for example `page 希鲁斯 --no-dict` reports `希鲁斯风暴` and `诸界觉者希鲁斯`, while the dictionary path resolves the intended one.
 
 ### doctor
 
@@ -274,6 +278,10 @@ Traps specific to PoE2:
 ## Caching
 
 Pages cache for 1 hour, searches for 5 minutes, under the user cache directory (Windows `%LOCALAPPDATA%\poe-wiki-cli\cache`). Force a refresh with `--no-cache` right after a league start or a wiki update; not needed for repeated lookups of the same page.
+
+The cache prunes itself on write: entries older than 7 days are removed, and the total is capped at 500 files (oldest first). Pruning never fails a command.
+
+`--sections` filters out poedb's stat-line pseudo-headings (entries carrying `[15000]`-style markers, `monster …`, `cannot be …`), so the outline only shows real sections. `--limit` caps results **per source**, not just the wiki.
 
 ## Workflows
 

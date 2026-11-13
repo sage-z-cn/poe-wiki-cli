@@ -64,7 +64,9 @@ poe-wiki-cli league --game poe2
 
 ### `search <query...>`
 
-By default both sites are queried: first poedb's redirect-style search, where a hit becomes the first result (`source: "poedb"`, `kind: "page"`), then the poewiki search API (`generator=search` + `prop=extracts`, which returns a plain-text intro taken from the start of the article in a single request).
+By default both sites are queried: first poedb, which either redirects straight to a page (a single result) or answers with a server-rendered result page that is parsed into deduplicated candidates (`source: "poedb"`, `kind: "page"`); then the poewiki search API (`generator=search` + `prop=extracts`, which returns a plain-text intro taken from the start of the article in a single request).
+
+poedb candidates are listed in page order without ranking. That is deliberate: the first hit is not always the intended one — `希鲁斯` returns `希鲁斯风暴` before `诸界觉者希鲁斯`.
 
 ```bash
 $ poe-wiki-cli search fireball --limit 1
@@ -85,7 +87,7 @@ A miss on poedb is not an error (poewiki usually still has results); only when b
 | `-g, --game <poe1\|poe2>` | Game: poe1 → poedb/poewiki, poe2 → poe2db/poe2wiki. Default `poe1` |
 | `-s, --source <both\|poedb\|wiki>` | Data source. Default `both` |
 | `-l, --lang <us\|tw\|cn\|kr\|ru\|jp\|fr\|de\|th\|pt\|sp>` | Database language; inferred from the query by default |
-| `-n, --limit <n>` | Maximum number of wiki results. Default 8 |
+| `-n, --limit <n>` | Maximum results per source. Default 8 |
 | `-j, --json` | Emit JSON |
 | `--no-cache` | Skip the local cache |
 | `--timeout <ms>` | Request timeout. Default 20000 |
@@ -96,7 +98,7 @@ Fetches a single page and prints markdown. `target` accepts three forms:
 
 - Full URL: `https://poedb.tw/cn/Headhunter`, `https://www.poewiki.net/wiki/Endgame`, `https://poe2db.tw/us/Waystone` (both the site and the game come from the host, overriding `--game`)
 - Site prefix: `poedb:Headhunter`, `wiki:Iron Reflexes`, `poe2db:Waystone`, `poe2wiki:Endgame`
-- Bare title: tries the db site first, falls back to the wiki
+- Bare title: tries the db site first, falls back to the wiki. If the db returns several candidates and none matches the title exactly, the command fails with the candidate list instead of guessing.
 
 ```bash
 $ poe-wiki-cli page Headhunter --source poedb
@@ -128,6 +130,7 @@ Requires Level 40
 | `--max-chars <n>` | Body length cap. Default 40000; with `--html` the default is 0 (no truncation) |
 | `--raw` | Print the body only, omitting the title and metadata |
 | `--sections` | Also print the section outline (exposed as a `sections` array in JSON) |
+| `--no-dict` | Skip the local name dictionary and resolve Chinese titles through search instead |
 | `--html` | Print raw HTML without markdown conversion (scripts, styles, navigation and other noise are stripped) |
 | `-j, --json` | Emit JSON |
 | `--no-cache` | Skip the local cache |
@@ -290,6 +293,24 @@ poe-wiki-cli page 獵首 --lang tw      # Traditional Chinese site
 
 Both JSON and text output include the `locale` that was actually used. Note that Chinese pages on poedb still use English URL slugs: `https://poedb.tw/cn/Headhunter`.
 
+### Name dictionary
+
+When a Chinese bare title maps to exactly one page, `page` skips the search round-trip. It downloads poedb's autocomplete dictionary (`localized name → page slug`) and builds the `/{lang}/{slug}` URL directly. The dictionary is per language — `cn` has 7,186 entries (526 KB), `tw` 7,814 (568 KB), `us` 746 KB — and only the locale being queried is downloaded:
+
+```
+poedb.tw/cn/  →  cdn.poedb.tw/js/poedb_header.<hash>.js  →  autocomplete_cn.<hash>.json
+```
+
+The chain is discovered from the site itself, so the dictionary always matches the current build rather than a pinned copy. Cache TTLs: dictionary **20 hours**, header script 24 hours, homepage 1 hour.
+
+- Only applies to bare titles containing Han characters; URLs and `poedb:` / `poe2db:` prefixed targets are untouched.
+- Any failure (download, parse, 404 on the resulting slug) falls back silently to the normal search path.
+- `--no-dict` disables the shortcut.
+- The dictionary is PoE1 data. PoE2-only names (e.g. waystone) are missing, so those fall back to search.
+- A small curated alias table fills the gap for names the dictionary never carries — old translations and community shorthand such as `病人 → 病患`, `护理师 → 照料者`, `法血 → 法师之血`, `正火 → 正义之火`, `闪打 → 闪电打击`, `刀阵 → 飞刃风暴`. Aliases apply **only when the dictionary has no exact entry**, so genuine same-name items are never overridden: `女武神` stays the ring Valyrium, `虚空` stays the gloves Null and Void.
+
+The first lookup in a 20-hour window downloads about 500 KB; later ones add no network cost.
+
 ## Output and exit codes
 
 | Exit code | Meaning |
@@ -319,6 +340,8 @@ With `--json`, errors look like this:
 - Other platforms: `$XDG_CACHE_HOME/poe-wiki-cli`, or `~/.cache/poe-wiki-cli` when unset
 
 One `<sha256(url)>.json` per URL, containing `{url, fetchedAt, body}`. TTL: 3600 seconds for pages, 300 seconds for search and `league`. Cache read/write failures degrade silently and never break a query; `--no-cache` neither reads nor writes.
+
+Old entries are pruned on write: files older than 7 days are removed, and if more than 500 remain, the oldest are dropped until the count fits. Pruning failures are ignored. `--sections` also filters poedb's stat-line pseudo-headings (entries containing `[15000]`-style markers, `monster …`, `cannot be …`) so the outline only lists real sections.
 
 ## Why the User-Agent must not start with Mozilla
 

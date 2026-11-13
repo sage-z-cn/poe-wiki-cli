@@ -1,4 +1,4 @@
-import { readCache, writeCache } from "./cache.js";
+import { pruneCacheOnce, readCache, writeCache } from "./cache.js";
 import { VERSION } from "./version.js";
 
 /**
@@ -76,6 +76,9 @@ export function isBlockedBody(body: string): boolean {
 }
 
 export async function getText(url: string, options: FetchTextOptions = {}): Promise<TextResponse> {
+  // 缓存清理每个进程只跑一次；放在这里可以覆盖 --no-cache（那时不会写缓存）。
+  await pruneCacheOnce();
+
   const ttl = options.cacheTtlSeconds ?? 0;
   const cacheEnabled = !options.noCache && ttl > 0;
 
