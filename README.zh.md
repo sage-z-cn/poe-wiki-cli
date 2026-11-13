@@ -45,6 +45,21 @@ npm run build
 npm link          # 或 npm install -g .
 ```
 
+## 更新
+
+```bash
+npm i -g poe-wiki-cli   # 或 npm update -g poe-wiki-cli
+poe-wiki-cli skill      # 打印包内 skill 的版本
+```
+
+CLI 不知道你的 agent 把 skill 放在哪，所以既不会扫描也不会写入。它只报告包内 skill 的版本，并可以原样输出这份文件：
+
+```bash
+poe-wiki-cli skill --print > "<你的 SKILL.md 路径>"
+```
+
+版本比较由 skill 自己完成：它的 frontmatter 带 `version`，末尾的 *Updating this skill* 一节告诉 agent 如何拿自己的版本和包内版本对比；包内更新时，agent 覆盖自己的文件并提示你重启会话。注意 Windows PowerShell 的 `>` 默认写 UTF-16，请改用 `poe-wiki-cli skill --print | Set-Content -Encoding utf8 "<路径>"`。
+
 ## 快速开始
 
 ```bash

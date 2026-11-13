@@ -5,6 +5,7 @@ import { runDoctor, type DoctorCheck } from "./commands/doctor.js";
 import { runLeague, leagueExitCode, type LeagueReport } from "./commands/league.js";
 import { runPage, type PageResult } from "./commands/page.js";
 import { runSearch, type SearchOutcome } from "./commands/search.js";
+import { runSkill, type SkillResult } from "./commands/skill.js";
 import { REALMS, type Realm } from "./sources/league.js";
 import { GAMES, type Game } from "./sites.js";
 import { LANGUAGES, type Lang, type PageDocument } from "./types.js";
@@ -43,6 +44,11 @@ interface PageCliOptions extends CommonCliOptions {
 interface LeagueCliOptions extends CommonCliOptions {
   realm: string;
   patch?: boolean;
+}
+
+interface SkillCliOptions {
+  print?: boolean;
+  json?: boolean;
 }
 
 async function main(): Promise<void> {
@@ -166,6 +172,23 @@ async function main(): Promise<void> {
       }
     });
 
+  program
+    .command("skill")
+    .description("Report the version of the bundled agent skill")
+    .option("--print", "print the bundled SKILL.md verbatim")
+    .option("-j, --json", "print machine-readable JSON")
+    .action((options: SkillCliOptions) => {
+      if (options.print === true && options.json === true) {
+        throw new UsageError(
+          "--print and --json cannot be used together.",
+          "Use --print for the raw file, or --json for the version report.",
+        );
+      }
+
+      const result = runSkill();
+      printSkill(result, { print: options.print === true, json: options.json === true });
+    });
+
   await program.parseAsync(process.argv);
 }
 
@@ -245,6 +268,18 @@ function printDoctor(checks: DoctorCheck[], json: boolean): void {
 
 function writeJson(payload: unknown): void {
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function printSkill(result: SkillResult, options: { print: boolean; json: boolean }): void {
+  if (options.print) {
+    process.stdout.write(result.content);
+    return;
+  }
+  if (options.json) {
+    writeJson({ ok: true, version: result.version });
+    return;
+  }
+  process.stdout.write(`bundled skill ${result.version}\nprint it with: poe-wiki-cli skill --print\n`);
 }
 
 function printLeague(report: LeagueReport, patch: boolean, json: boolean): void {

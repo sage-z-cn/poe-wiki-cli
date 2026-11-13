@@ -1,5 +1,6 @@
 ---
 name: poe-wiki-cli
+version: 0.3.0
 description: Query Path of Exile reference sites from the shell — PoE1 (poedb.tw, poewiki.net) and PoE2 (poe2db.tw, poe2wiki.net) — for structured game data (gems, unique items, modifiers, waystones/maps, divination cards, keywords), mechanics prose, and per-realm league or patch schedules (international us / Tencent cn). Use when you need exact in-game numbers, confirmation of an item or gem's stats, a clean markdown copy of a wiki page, or current and upcoming version dates. Switch games with --game poe2; supports Chinese and English queries, markdown or JSON output.
 ---
 
@@ -331,3 +332,18 @@ poe-wiki-cli league --game poe2
 ```
 
 Do not carry PoE1 vocabulary over: PoE2 says **gem** / **uncut gem**, **waystone** (not map), **spirit**, and **Passive Skill Tree**. A PoE1 term will often still return a page — a wrong or empty one — which is worse than a miss.
+
+## Updating this skill
+
+`poe-wiki-cli skill` only reports the version of the skill bundled inside the CLI. It has no idea where this particular file lives, so updating is your job:
+
+1. Read `version:` from this file's frontmatter.
+2. Run `poe-wiki-cli skill` to get the bundled version (`bundled skill <version>`).
+3. If the bundled version is newer, overwrite this file with the bundled copy:
+   `poe-wiki-cli skill --print > "<path to this SKILL.md>"`
+   The path is the skill's base directory — the location this file was loaded from.
+   Windows PowerShell `>` writes UTF-16 by default; use
+   `poe-wiki-cli skill --print | Set-Content -Encoding utf8 "<path>"` instead.
+4. Ask the user to restart the session so the updated skill is loaded.
+
+Replace the whole file. Do not hand-edit it or merge sections.

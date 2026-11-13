@@ -45,6 +45,21 @@ npm run build
 npm link          # or: npm install -g .
 ```
 
+## Updating
+
+```bash
+npm i -g poe-wiki-cli   # or: npm update -g poe-wiki-cli
+poe-wiki-cli skill      # prints the bundled skill version
+```
+
+The CLI cannot know where your agent keeps skills, so it never scans or writes them. It only reports the version of the skill bundled with the package, and can print that file verbatim:
+
+```bash
+poe-wiki-cli skill --print > "<path to your SKILL.md>"
+```
+
+The skill itself carries a `version` and an *Updating this skill* section: the agent compares its own version with the bundled one and, when the package is newer, overwrites its own file and asks you to restart the session. On Windows PowerShell, `>` writes UTF-16 by default — use `poe-wiki-cli skill --print | Set-Content -Encoding utf8 "<path>"` instead.
+
 ## Quick start
 
 ```bash
