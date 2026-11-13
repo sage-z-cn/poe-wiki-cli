@@ -1,0 +1,51 @@
+{
+  "name": "poe-wiki-cli",
+  "version": "0.1.0",
+  "description": "Query Path of Exile knowledge from poedb.tw and poewiki.net in clean, machine-readable markdown.",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "poe-wiki-cli": "./dist/src/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "skill",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"dist/test/*.test.js\"",
+    "smoke": "node dist/src/cli.js doctor",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sage-z-cn/poe-wiki-cli.git"
+  },
+  "author": "Sage <sagezheng@outlook.com>",
+  "license": "MIT",
+  "keywords": [
+    "path-of-exile",
+    "poe",
+    "poedb",
+    "poewiki",
+    "wiki",
+    "cli",
+    "mcp-alternative"
+  ],
+  "dependencies": {
+    "commander": "^14.0.0",
+    "node-html-parser": "^7.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
