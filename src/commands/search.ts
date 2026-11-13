@@ -64,10 +64,11 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
   }
 
   if (results.length === 0) {
-    throw new NotFoundError(
-      `两个站点都没有找到「${query}」的结果。`,
-      "poedb 的搜索区分大小写，可换成更短的英文关键词；中文标题请使用 --lang cn。",
-    );
+    const hint =
+      options.source === "wiki"
+        ? "Try a shorter or more general keyword."
+        : `${sites.dbName} search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.`;
+    throw new NotFoundError(`No results for "${query}".`, hint);
   }
 
   return { game: options.game, query, locale, results };

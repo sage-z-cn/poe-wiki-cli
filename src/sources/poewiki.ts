@@ -74,7 +74,7 @@ export async function search(query: string, limit: number, options: WikiOptions 
     accept: "application/json",
   });
 
-  const data = parseJson<SearchResponse>(response.body, url, `${sites.wikiName} 搜索接口`, sites.wikiName);
+  const data = parseJson<SearchResponse>(response.body, url, `${sites.wikiName} search API`, sites.wikiName);
   return parseSearchPages(data, game);
 }
 
@@ -127,16 +127,16 @@ async function loadPage(title: string, options: WikiOptions): Promise<{ title: s
   const fallback = hits[0];
   if (!fallback) {
     throw new NotFoundError(
-      `${sites.wikiName} 没有「${title}」对应的页面。`,
-      "换一个关键词，或直接用 search 命令查看候选条目。",
+      `${sites.wikiName} has no page for "${title}".`,
+      "Try another keyword, or use the search command to see candidate titles.",
     );
   }
 
   const resolved = await requestParse(fallback.title, options);
   if (!resolved) {
     throw new NotFoundError(
-      `${sites.wikiName} 无法加载「${fallback.title}」。`,
-      "该条目可能已被删除或重命名，可重新搜索。",
+      `${sites.wikiName} could not load "${fallback.title}".`,
+      "The page may have been deleted or renamed; search again.",
     );
   }
   return resolved;
@@ -187,16 +187,16 @@ async function requestParse(title: string, options: WikiOptions): Promise<{ titl
       return null;
     }
     throw new NetworkError(
-      `${sites.wikiName} API 返回错误：${data.error.info ?? code ?? "未知错误"}`,
-      "稍后重试，或改用 search 命令确认条目名称。",
+      `${sites.wikiName} API error: ${data.error.info ?? code ?? "unknown error"}`,
+      "Retry later, or use the search command to confirm the title.",
     );
   }
 
   if (!data.parse || typeof data.parse.text !== "string") {
     // 返回 200 但不是 MediaWiki 的 JSON 结构，通常是 Anubis 验证页的变体。
     throw new BlockedError(
-      `${sites.wikiName} 返回的内容不是页面数据：${pageUrl(title, game)}`,
-      "请求可能被反爬验证页替换，请稍后重试。",
+      `${sites.wikiName} returned something other than page data: ${pageUrl(title, game)}.`,
+      "The request may have been answered with a bot-protection page; retry later.",
     );
   }
 
@@ -212,13 +212,13 @@ function parseJson<T>(body: string, requestUrl: string, sourceHint: string, site
   } catch {
     if (isBlockedBody(body) || (!body.includes("mw-parser-output") && !body.includes('"parse"'))) {
       throw new BlockedError(
-        `${siteName} 返回了反爬验证页而不是数据：${sourceHint}`,
-        "本工具已使用非浏览器 UA，若仍被拦截请稍后重试，或改用 --source poedb。",
+        `${siteName} returned a bot-protection page instead of data: ${sourceHint}.`,
+        "This build already sends a non-Mozilla User-Agent; retry later, or use --source poedb.",
       );
     }
     throw new NetworkError(
-      `${siteName} 返回了无法解析的响应：${requestUrl}`,
-      "稍后重试；若持续出现，请确认网络是否被代理改写。",
+      `${siteName} returned an unparseable response: ${requestUrl}.`,
+      "Retry later; if it persists, check whether a proxy is rewriting responses.",
     );
   }
 }

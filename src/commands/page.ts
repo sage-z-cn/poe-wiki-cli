@@ -92,7 +92,7 @@ export async function runPage(target: string, options: PageOptions): Promise<Pag
 export function parseTarget(raw: string): Target {
   const value = raw.trim();
   if (!value) {
-    throw new UsageError("页面标题或链接不能为空。");
+    throw new UsageError("Page title or URL cannot be empty.");
   }
 
   if (/^https?:\/\//i.test(value)) {
@@ -103,7 +103,7 @@ export function parseTarget(raw: string): Target {
   if (prefixed) {
     const rest = prefixed[2].trim();
     if (!rest) {
-      throw new UsageError("站点前缀后面需要跟页面标题，例如 poe2db:Fireball。");
+      throw new UsageError("A site prefix must be followed by a page title, for example poe2db:Fireball.");
     }
     if (/^https?:\/\//i.test(rest)) {
       return parseUrl(rest);
@@ -130,7 +130,7 @@ async function load(parsed: Target, options: PageOptions): Promise<LoadedPage> {
     }
     const title = parsed.title || titleFromUrl(parsed.url);
     if (!title) {
-      throw new UsageError(`无法从链接中解析出 wiki 标题：${parsed.url}`);
+      throw new UsageError(`Could not read a wiki title from the link: ${parsed.url}`);
     }
     return loadWikiTitle(title, parsed.game, options, common);
   }
@@ -164,8 +164,8 @@ async function loadDbTitle(
   const hit = await resolvePoedb(title, { ...common, game, lang: options.lang });
   if (!hit) {
     throw new NotFoundError(
-      `${sites.dbName} 没有「${title}」对应的页面（locale: ${inferLang(title, options.lang)}）。`,
-      "poedb 的搜索区分大小写，可换用更短的英文关键词；中文标题请配 --lang cn。",
+      `${sites.dbName} has no page for "${title}" (locale: ${inferLang(title, options.lang)}).`,
+      `${sites.dbName} search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.`,
     );
   }
   return loadDbUrl(hit.url, game, options, common, hit.locale);
@@ -222,7 +222,7 @@ function parseUrl(value: string): Target {
   try {
     url = new URL(value);
   } catch {
-    throw new UsageError(`无法解析链接：${value}`, "请提供完整的 http(s) 链接。");
+    throw new UsageError(`Could not parse the URL: ${value}`, "Provide a full http(s) link.");
   }
 
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
@@ -230,8 +230,8 @@ function parseUrl(value: string): Target {
 
   if (!game) {
     throw new UsageError(
-      `不支持的站点：${url.hostname}`,
-      "只支持 poedb.tw、poe2db.tw、poewiki.net、poe2wiki.net 的链接。",
+      `Unsupported site: ${url.hostname}.`,
+      "Only links from poedb.tw, poe2db.tw, poewiki.net, and poe2wiki.net are supported.",
     );
   }
 
@@ -250,8 +250,8 @@ function parseUrl(value: string): Target {
   const title = titleFromUrl(url.href);
   if (!title) {
     throw new UsageError(
-      `无法从链接中解析出 wiki 标题：${value}`,
-      "请使用 https://www.poewiki.net/wiki/<标题> 或 https://www.poe2wiki.net/wiki/<标题> 形式。",
+      `Could not read a wiki title from the link: ${value}`,
+      "Use the form https://www.poewiki.net/wiki/<title> or https://www.poe2wiki.net/wiki/<title>.",
     );
   }
   return { kind: "url", url: url.href, site: "wiki", game, title };
@@ -325,7 +325,7 @@ function truncate(text: string, maxChars: number, asHtml: boolean): { text: stri
   }
   const kb = Math.max(1, Math.round(text.length / 1024));
   const note = asHtml
-    ? `\n\n<!-- 内容已截断（原始 ${kb} KB，上限 ${maxChars} 字符）。用 --max-chars 调整。 -->`
-    : `\n\n---\n_内容已截断（原始 ${kb} KB，上限 ${maxChars} 字符）。用 --max-chars 调整。_`;
+    ? `\n\n<!-- Content truncated (original ${kb} KB, limit ${maxChars} characters). Adjust with --max-chars. -->`
+    : `\n\n---\n_Content truncated (original ${kb} KB, limit ${maxChars} characters). Adjust with --max-chars._`;
   return { text: `${text.slice(0, maxChars)}${note}`, truncated: true };
 }

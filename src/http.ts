@@ -28,19 +28,19 @@ export class CliError extends Error {
 }
 
 export class UsageError extends CliError {
-  constructor(message: string, hint = "运行 poe-wiki-cli --help 查看用法。") {
+  constructor(message: string, hint = "Run poe-wiki-cli --help for usage.") {
     super("USAGE", message, hint);
   }
 }
 
 export class NotFoundError extends CliError {
-  constructor(message: string, hint = "换一个标题或关键词重试，也可以加 --source wiki 直接搜索 poewiki。") {
+  constructor(message: string, hint = "Try another title or keyword, or add --source wiki to search the wiki directly.") {
     super("NOT_FOUND", message, hint);
   }
 }
 
 export class BlockedError extends CliError {
-  constructor(message: string, hint = "稍后重试；若持续出现，可在浏览器打开站点确认真实状态。") {
+  constructor(message: string, hint = "Retry later; if it keeps happening, open the site in a browser to check its status.") {
     super("BLOCKED", message, hint);
   }
 }
@@ -50,7 +50,7 @@ export class NetworkError extends CliError {
 
   constructor(
     message: string,
-    hint = "检查网络连接与代理设置后重试；也可以提高 --timeout。",
+    hint = "Check your network connection and proxy settings, then retry. You can also raise --timeout.",
     retryable = false,
   ) {
     super("NETWORK", message, hint);
@@ -113,18 +113,22 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
       const body = await response.text();
 
       if (response.status >= 500) {
-        throw new NetworkError(`服务端返回 HTTP ${response.status}：${url}`, undefined, true);
+        // 以 URL 结尾的消息不补句末句号，否则复制链接会把标点一起带走。
+        throw new NetworkError(`The server returned HTTP ${response.status} for ${url}`, undefined, true);
       }
       if (response.status === 404) {
-        throw new NotFoundError(`页面不存在（HTTP 404）：${url}`, "确认标题拼写，或改用搜索命令定位正确条目。");
+        throw new NotFoundError(
+          `Page not found (HTTP 404): ${url}`,
+          "Check the title spelling, or use the search command to find the right entry.",
+        );
       }
       if (response.status >= 400) {
-        throw new NetworkError(`请求失败（HTTP ${response.status}）：${url}`);
+        throw new NetworkError(`Request failed with HTTP ${response.status}: ${url}`);
       }
       if (isBlockedBody(body)) {
         throw new BlockedError(
-          `请求被 ${new URL(url).host} 的反爬验证页拦截：${url}`,
-          "本工具已使用非浏览器 UA，若仍被拦截请稍后重试，或改用 --source poedb。",
+          `${new URL(url).host} answered with a bot-protection page: ${url}`,
+          "This build already sends a non-Mozilla User-Agent; retry later, or use --source poedb.",
         );
       }
 
@@ -140,9 +144,9 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
       }
 
       lastError = new NetworkError(
-        `网络请求失败：${url}（${describeError(error)}）`,
+        `Network request failed: ${url} (${describeError(error)}).`,
         error instanceof Error && error.name === "TimeoutError"
-          ? "请求超时，可在命令后加 --timeout 30000 放宽限制。"
+          ? "The request timed out. Retry with --timeout 30000 to allow more time."
           : undefined,
         true,
       );
@@ -155,7 +159,7 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
     }
   }
 
-  throw lastError ?? new NetworkError(`网络请求失败：${url}`);
+  throw lastError ?? new NetworkError(`Network request failed: ${url}`);
 }
 
 function describeError(error: unknown): string {

@@ -49,25 +49,25 @@ async function main(): Promise<void> {
 
   program
     .name("poe-wiki-cli")
-    .description("查询 Path of Exile 1/2 资料站（poedb、poe2db 与 poewiki、poe2wiki），输出干净、可机读的 markdown。")
-    .version(VERSION, "-v, --version", "显示版本号")
+    .description("Query Path of Exile 1 and 2 reference sites (poedb, poe2db, poewiki, poe2wiki) and print clean, machine-readable markdown.")
+    .version(VERSION, "-v, --version", "print the version number")
     .showHelpAfterError();
 
   program
     .command("search")
-    .description("搜索资料站与 wiki（默认两站都查，可用 --game 切换 PoE1/PoE2）")
-    .argument("<query...>", "搜索关键词，可包含空格")
-    .option("-g, --game <game>", "游戏版本：poe1|poe2", "poe1")
-    .option("-s, --source <source>", "数据源：both|poedb|wiki", "both")
-    .option("-l, --lang <lang>", "poedb 语言（默认按查询词推断：中文→cn，其它→us）")
-    .option("-n, --limit <n>", "poewiki 结果上限", "8")
-    .option("-j, --json", "输出机器可读的 JSON")
-    .option("--no-cache", "跳过本地缓存")
-    .option("--timeout <ms>", "请求超时（毫秒）", "20000")
+    .description("Search both the database and the wiki (use --game to switch between PoE1 and PoE2)")
+    .argument("<query...>", "search keywords, spaces allowed")
+    .option("-g, --game <game>", "game version: poe1|poe2", "poe1")
+    .option("-s, --source <source>", "data source: both|poedb|wiki", "both")
+    .option("-l, --lang <lang>", "database language (inferred from the query by default: Chinese -> cn, otherwise us)")
+    .option("-n, --limit <n>", "maximum number of wiki results", "8")
+    .option("-j, --json", "print machine-readable JSON")
+    .option("--no-cache", "skip the local cache")
+    .option("--timeout <ms>", "request timeout in milliseconds", "20000")
     .action(async (queryParts: string[], options: SearchCliOptions) => {
       const query = queryParts.join(" ").trim();
       if (!query) {
-        throw new UsageError("搜索关键词不能为空。");
+        throw new UsageError("Search query cannot be empty.");
       }
       const outcome = await runSearch(query, {
         game: parseGame(options.game),
@@ -82,23 +82,23 @@ async function main(): Promise<void> {
 
   program
     .command("page")
-    .description("抓取页面并输出 markdown")
-    .argument("<target>", "完整 URL、poedb:/poe2db:<标题>、wiki:/poe2wiki:<标题> 或裸标题")
-    .option("-g, --game <game>", "游戏版本：poe1|poe2（完整 URL 以 host 为准）", "poe1")
-    .option("-s, --source <source>", "数据源：auto|both|poedb|wiki", "auto")
-    .option("-l, --lang <lang>", "poedb 语言（默认按标题推断：中文→cn，其它→us）")
-    .option("-j, --json", "输出机器可读的 JSON")
-    .option("--no-cache", "跳过本地缓存")
-    .option("--timeout <ms>", "请求超时（毫秒）", "20000")
-    .option("--max-chars <n>", "正文最大字符数，超出会被截断（--html 时默认 0 表示不截断）")
-    .option("--raw", "只输出正文 markdown，省略标题与元信息")
-    .option("--html", "直接输出原始 HTML（去掉脚本/样式/导航等噪声，不转 markdown）")
-    .option("--sections", "额外输出章节大纲")
+    .description("Fetch a page and print markdown")
+    .argument("<target>", "full URL, poedb:/poe2db:<title>, wiki:/poe2wiki:<title>, or a bare title")
+    .option("-g, --game <game>", "game version: poe1|poe2 (a full URL overrides this via its host)", "poe1")
+    .option("-s, --source <source>", "data source: auto|both|poedb|wiki", "auto")
+    .option("-l, --lang <lang>", "database language (inferred from the title by default: Chinese -> cn, otherwise us)")
+    .option("-j, --json", "print machine-readable JSON")
+    .option("--no-cache", "skip the local cache")
+    .option("--timeout <ms>", "request timeout in milliseconds", "20000")
+    .option("--max-chars <n>", "maximum body length in characters before truncation (0 disables it; defaults to 0 with --html)")
+    .option("--raw", "print only the body markdown, without the title and metadata")
+    .option("--html", "print raw HTML instead of markdown (scripts, styles and navigation are stripped)")
+    .option("--sections", "also print a heading outline")
     .action(async (target: string, options: PageCliOptions) => {
       if (options.html === true && options.raw === true) {
         throw new UsageError(
-          "--html 与 --raw 不能同时使用。",
-          "要原始 HTML 就去掉 --raw；要正文 markdown 就去掉 --html。",
+          "--html and --raw cannot be used together.",
+          "Drop --raw for raw HTML, or drop --html for markdown.",
         );
       }
 
@@ -124,10 +124,10 @@ async function main(): Promise<void> {
 
   program
     .command("doctor")
-    .description("诊断站点可达性与反爬状态（--game both 检查四个站点）")
-    .option("-g, --game <game>", "游戏版本：both|poe1|poe2", "both")
-    .option("-j, --json", "输出机器可读的 JSON")
-    .option("--timeout <ms>", "请求超时（毫秒）", "20000")
+    .description("Check site reachability and bot-protection status (--game both probes all four sites)")
+    .option("-g, --game <game>", "game version: both|poe1|poe2", "both")
+    .option("-j, --json", "print machine-readable JSON")
+    .option("--timeout <ms>", "request timeout in milliseconds", "20000")
     .action(async (options: CommonCliOptions) => {
       const checks = await runDoctor({
         games: parseGames(options.game),
@@ -141,13 +141,13 @@ async function main(): Promise<void> {
 
   program
     .command("league")
-    .description("查看资料站首页的赛季/版本信息")
-    .option("-g, --game <game>", "游戏版本：poe1|poe2", "poe1")
-    .option("--realm <realm>", "服务器：both|us|cn", "both")
-    .option("--patch", "展开最新版本的汇总链接")
-    .option("-j, --json", "输出机器可读的 JSON")
-    .option("--no-cache", "跳过本地缓存")
-    .option("--timeout <ms>", "请求超时（毫秒）", "20000")
+    .description("Show league and version information from the database homepage")
+    .option("-g, --game <game>", "game version: poe1|poe2", "poe1")
+    .option("--realm <realm>", "realm: both|us|cn", "both")
+    .option("--patch", "expand the link groups of the newest version")
+    .option("-j, --json", "print machine-readable JSON")
+    .option("--no-cache", "skip the local cache")
+    .option("--timeout <ms>", "request timeout in milliseconds", "20000")
     .action(async (options: LeagueCliOptions) => {
       const report = await runLeague({
         game: parseGame(options.game),
@@ -215,7 +215,7 @@ function printPage(document: PageResult, json: boolean, raw: boolean): void {
 
 function formatSections(sections: NonNullable<PageDocument["sections"]>): string {
   const minimum = Math.min(...sections.map((section) => section.level));
-  const lines = ["> 章节大纲"];
+  const lines = ["> Sections"];
   for (const section of sections) {
     lines.push(`${"  ".repeat(Math.max(0, section.level - minimum))}- ${section.title}`);
   }
@@ -295,9 +295,9 @@ function printLeague(report: LeagueReport, patch: boolean, json: boolean): void 
 
     for (const warning of realm.warnings ?? []) {
       if (warning.startsWith("no league cards parsed")) {
-        lines.push(`  ! 未解析到赛季卡片，可能是首页结构变了。兜底：poe-wiki-cli page ${realm.url} --html`);
+        lines.push(`  ! No league cards parsed; the homepage layout may have changed. Fallback: poe-wiki-cli page ${realm.url} --html`);
       } else if (warning.startsWith("fetch failed:")) {
-        lines.push(`  ! 抓取失败：${warning.slice("fetch failed:".length).trim()}`);
+        lines.push(`  ! Fetch failed: ${warning.slice("fetch failed:".length).trim()}`);
       } else {
         lines.push(`  ! ${warning}`);
       }
@@ -380,7 +380,7 @@ function parseRealm(value: string): Realm[] {
   if ((REALMS as readonly string[]).includes(normalized)) {
     return [normalized as Realm];
   }
-  throw new UsageError(`不支持的服务器「${value}」。`, "可选值：both、us、cn。");
+  throw new UsageError(`Unsupported realm "${value}".`, "Valid values: both, us, cn.");
 }
 
 function parseGame(value: string): Game {
@@ -388,7 +388,7 @@ function parseGame(value: string): Game {
   if ((GAMES as readonly string[]).includes(normalized)) {
     return normalized as Game;
   }
-  throw new UsageError(`不支持的游戏版本「${value}」。`, "可选值：poe1、poe2。");
+  throw new UsageError(`Unsupported game "${value}".`, "Valid values: poe1, poe2.");
 }
 
 function parseGames(value: string): Game[] {
@@ -402,7 +402,7 @@ function parseGames(value: string): Game[] {
 function parsePositiveInt(value: string, flag: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new UsageError(`${flag} 需要正整数，收到「${value}」。`);
+    throw new UsageError(`${flag} expects a positive integer, got "${value}".`);
   }
   return parsed;
 }
@@ -410,7 +410,7 @@ function parsePositiveInt(value: string, flag: string): number {
 function parseNonNegativeInt(value: string, flag: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new UsageError(`${flag} 需要非负整数，收到「${value}」。`);
+    throw new UsageError(`${flag} expects a non-negative integer, got "${value}".`);
   }
   return parsed;
 }
@@ -418,7 +418,7 @@ function parseNonNegativeInt(value: string, flag: string): number {
 function parseSource<T extends string>(value: string, allowed: readonly T[]): T {
   const normalized = value.trim().toLowerCase();
   if (!(allowed as readonly string[]).includes(normalized)) {
-    throw new UsageError(`不支持的数据源「${value}」。`, `可选值：${allowed.join("、")}。`);
+    throw new UsageError(`Unsupported source "${value}".`, `Valid values: ${allowed.join(", ")}.`);
   }
   return normalized as T;
 }
@@ -429,7 +429,7 @@ function parseLang(value?: string): Lang | undefined {
   }
   const normalized = value.trim().toLowerCase();
   if (!(LANGUAGES as readonly string[]).includes(normalized)) {
-    throw new UsageError(`不支持的语言「${value}」。`, `可选值：${LANGUAGES.join("、")}。`);
+    throw new UsageError(`Unsupported language "${value}".`, `Valid values: ${LANGUAGES.join(", ")}.`);
   }
   return normalized as Lang;
 }
@@ -442,7 +442,7 @@ main().catch((error: unknown) => {
   const normalized =
     error instanceof CliError
       ? error
-      : new NetworkError(error instanceof Error ? error.message : String(error), "这是未预期的错误，请附上完整命令反馈。");
+      : new NetworkError(error instanceof Error ? error.message : String(error), "This is an unexpected error. Please report it together with the full command.");
 
   if (wantsJson(process.argv)) {
     process.stdout.write(
@@ -453,7 +453,7 @@ main().catch((error: unknown) => {
       )}\n`,
     );
   } else {
-    process.stderr.write(`错误: ${normalized.message}\n提示: ${normalized.hint}\n`);
+    process.stderr.write(`Error: ${normalized.message}\nHint: ${normalized.hint}\n`);
   }
 
   process.exitCode = EXIT_CODE[normalized.code] ?? 4;
