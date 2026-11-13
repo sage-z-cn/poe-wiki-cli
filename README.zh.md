@@ -9,13 +9,13 @@
 - 输出结构稳定，`--json` 直接可 `JSON.parse`
 - 失败原因用退出码区分：用法错误 / 未找到 / 被反爬拦截 / 网络错误
 - 本地文件缓存，重复查询不重复下载
-- 附带 agent skill（`skill/SKILL.md`），装好后 opencode、Claude Code 能自动发现并调用它
+- 附带 agent skill（`skill/SKILL.md`），支持 skill 的 agent 宿主会自动发现并调用它
 
 ## 安装
 
 ### 让 agent 自动安装（推荐）
 
-把下面这段原样粘到你的 LLM agent 会话里（opencode、Claude Code、Codex 都适用）：
+把下面这段原样粘到你的 LLM agent 会话里：
 
 ```text
 Install and configure poe-wiki-cli by following the instructions here:
@@ -34,32 +34,6 @@ poe-wiki-cli doctor
 ```
 
 不想全局安装就用 `npx poe-wiki-cli <命令>`。如果 `npm install -g` 报 404，说明包还没发布，改走下面的「从源码安装」。
-
-### 手动安装 skill
-
-skill 是给 agent 看的说明书：它决定 agent 什么时候该调用这个 CLI、读哪一段输出、遇到退出码 3 该换源还是重试。文件就是本仓库的 `skill/SKILL.md`，**原样复制**，不要改写。
-
-| 宿主 | 路径 |
-| --- | --- |
-| opencode | `~/.config/opencode/skills/poe-wiki-cli/SKILL.md` |
-| Claude Code | `~/.claude/skills/poe-wiki-cli/SKILL.md` |
-| 只对当前项目生效 | `<项目根>/.opencode/skills/poe-wiki-cli/SKILL.md` |
-
-macOS / Linux：
-
-```bash
-mkdir -p ~/.config/opencode/skills/poe-wiki-cli
-cp skill/SKILL.md ~/.config/opencode/skills/poe-wiki-cli/SKILL.md
-```
-
-Windows（PowerShell）：
-
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli" | Out-Null
-Copy-Item skill\SKILL.md "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli\SKILL.md"
-```
-
-装完需要重启 agent 会话，skill 才会被发现。
 
 ### 从源码安装
 
@@ -329,8 +303,8 @@ JSON 与文本输出都会带上实际使用的 `locale`。注意 poedb 中文�
 文本模式下错误写到 stderr：
 
 ```
-错误: poedb 没有「skill gem」对应的页面（locale: us）。
-提示: poedb 的搜索区分大小写，可换用更短的英文关键词；中文标题请配 --lang cn。
+Error: poedb has no page for "skill gem" (locale: us).
+Hint: poedb search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.
 ```
 
 `--json` 出错时输出：

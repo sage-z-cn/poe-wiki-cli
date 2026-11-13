@@ -9,13 +9,13 @@ A command-line Path of Exile lookup tool for AI agents: search and fetch pages f
 - Stable output shape; `--json` output can be passed straight to `JSON.parse`
 - Exit codes distinguish failure modes: usage error / not found / blocked by bot protection / network error
 - Local file cache, so repeated queries don't re-download
-- Ships with an agent skill (`skill/SKILL.md`); once installed, opencode and Claude Code discover and invoke it automatically
+- Ships with an agent skill (`skill/SKILL.md`) that any skill-capable agent host discovers and invokes automatically
 
 ## Installation
 
 ### Let your agent install it (recommended)
 
-Paste the following verbatim into your LLM agent session (works with opencode, Claude Code, and Codex):
+Paste the following verbatim into your LLM agent session:
 
 ```text
 Install and configure poe-wiki-cli by following the instructions here:
@@ -34,32 +34,6 @@ poe-wiki-cli doctor
 ```
 
 If you'd rather not install globally, use `npx poe-wiki-cli <command>`. If `npm install -g` returns 404, the package hasn't been published yet — use "Install from source" below.
-
-### Install the skill manually
-
-The skill is the manual for the agent: it decides when the CLI should be called, which part of the output to read, and whether to switch sources or retry on exit code 3. The file is `skill/SKILL.md` in this repository — **copy it verbatim; do not edit it.**
-
-| Host | Path |
-| --- | --- |
-| opencode | `~/.config/opencode/skills/poe-wiki-cli/SKILL.md` |
-| Claude Code | `~/.claude/skills/poe-wiki-cli/SKILL.md` |
-| Current project only | `<project root>/.opencode/skills/poe-wiki-cli/SKILL.md` |
-
-macOS / Linux:
-
-```bash
-mkdir -p ~/.config/opencode/skills/poe-wiki-cli
-cp skill/SKILL.md ~/.config/opencode/skills/poe-wiki-cli/SKILL.md
-```
-
-Windows (PowerShell):
-
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli" | Out-Null
-Copy-Item skill\SKILL.md "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli\SKILL.md"
-```
-
-Restart your agent session afterwards so the skill gets discovered.
 
 ### Install from source
 
@@ -326,11 +300,11 @@ Both JSON and text output include the `locale` that was actually used. Note that
 | 3 | Blocked by a bot-protection challenge page |
 | 4 | Network or HTTP error (including a failed `doctor` probe) |
 
-In text mode, errors are written to stderr (the CLI's own messages are currently in Chinese):
+In text mode, errors are written to stderr:
 
 ```
-错误: poedb 没有「skill gem」对应的页面（locale: us）。
-提示: poedb 的搜索区分大小写，可换用更短的英文关键词；中文标题请配 --lang cn。
+Error: poedb has no page for "skill gem" (locale: us).
+Hint: poedb search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.
 ```
 
 With `--json`, errors look like this:
