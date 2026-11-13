@@ -1,75 +1,77 @@
 # poe-wiki-cli
 
-给 AI agent 用的 Path of Exile 资料查询命令行：搜索、抓取 **poedb.tw / www.poewiki.net**（PoE1）与 **poe2db.tw / www.poe2wiki.net**（PoE2）的页面，并转成干净、稳定的 markdown 或 JSON。
+English | [简体中文](README.zh.md)
 
-- 服务端渲染直取，不启动浏览器
-- PoE1 与 PoE2 双站支持，用 `--game poe2` 切换，默认 PoE1
-- 输出结构稳定，`--json` 直接可 `JSON.parse`
-- 失败原因用退出码区分：用法错误 / 未找到 / 被反爬拦截 / 网络错误
-- 本地文件缓存，重复查询不重复下载
-- 附带 agent skill（`skill/SKILL.md`），装好后 opencode、Claude Code 能自动发现并调用它
+A command-line Path of Exile lookup tool for AI agents: search and fetch pages from **poedb.tw / www.poewiki.net** (PoE1) and **poe2db.tw / www.poe2wiki.net** (PoE2), converted into clean, stable markdown or JSON.
 
-## 安装
+- Fetches server-rendered HTML directly, no browser involved
+- Supports both PoE1 and PoE2, switch with `--game poe2` (PoE1 is the default)
+- Stable output shape; `--json` output can be passed straight to `JSON.parse`
+- Exit codes distinguish failure modes: usage error / not found / blocked by bot protection / network error
+- Local file cache, so repeated queries don't re-download
+- Ships with an agent skill (`skill/SKILL.md`); once installed, opencode and Claude Code discover and invoke it automatically
 
-### 让 agent 自动安装（推荐）
+## Installation
 
-把下面这段原样粘到你的 LLM agent 会话里（opencode、Claude Code、Codex 都适用）：
+### Let your agent install it (recommended)
+
+Paste the following verbatim into your LLM agent session (works with opencode, Claude Code, and Codex):
 
 ```text
 Install and configure poe-wiki-cli by following the instructions here:
 https://raw.githubusercontent.com/sage-z-cn/poe-wiki-cli/refs/heads/main/docs/agent-install.md
 ```
 
-agent 会照着那份文档装好 CLI、把 skill 放进对应宿主的 skills 目录，再跑一遍 `doctor` 自检，最后告诉你装的是哪个版本、skill 落在哪里。
+The agent will follow those instructions to install the CLI, place the skill in the right host's skills directory, run `doctor` to verify, and finally report which version it installed and where the skill landed.
 
-### 手动安装 CLI
+### Install the CLI manually
 
-要求 Node.js >= 20（依赖内置 `fetch`）。
+Requires Node.js >= 20 (the tool relies on the built-in `fetch`).
 
 ```bash
 npm install -g poe-wiki-cli
 poe-wiki-cli doctor
 ```
 
-不想全局安装就用 `npx poe-wiki-cli <命令>`。如果 `npm install -g` 报 404，说明包还没发布，改走下面的「从源码安装」。
+If you'd rather not install globally, use `npx poe-wiki-cli <command>`. If `npm install -g` returns 404, the package hasn't been published yet — use "Install from source" below.
 
-### 手动安装 skill
+### Install the skill manually
 
-skill 是给 agent 看的说明书：它决定 agent 什么时候该调用这个 CLI、读哪一段输出、遇到退出码 3 该换源还是重试。文件就是本仓库的 `skill/SKILL.md`，**原样复制**，不要改写。
+The skill is the manual for the agent: it decides when the CLI should be called, which part of the output to read, and whether to switch sources or retry on exit code 3. The file is `skill/SKILL.md` in this repository — **copy it verbatim; do not edit it.**
 
-| 宿主 | 路径 |
+| Host | Path |
 | --- | --- |
 | opencode | `~/.config/opencode/skills/poe-wiki-cli/SKILL.md` |
 | Claude Code | `~/.claude/skills/poe-wiki-cli/SKILL.md` |
-| 只对当前项目生效 | `<项目根>/.opencode/skills/poe-wiki-cli/SKILL.md` |
+| Current project only | `<project root>/.opencode/skills/poe-wiki-cli/SKILL.md` |
 
-macOS / Linux：
+macOS / Linux:
 
 ```bash
 mkdir -p ~/.config/opencode/skills/poe-wiki-cli
 cp skill/SKILL.md ~/.config/opencode/skills/poe-wiki-cli/SKILL.md
 ```
 
-Windows（PowerShell）：
+Windows (PowerShell):
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli" | Out-Null
 Copy-Item skill\SKILL.md "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli\SKILL.md"
 ```
 
-装完需要重启 agent 会话，skill 才会被发现。
+Restart your agent session afterwards so the skill gets discovered.
 
-### 从源码安装
+### Install from source
 
 ```bash
 git clone https://github.com/sage-z-cn/poe-wiki-cli.git
 cd poe-wiki-cli
 npm install
 npm run build
-npm link          # 或 npm install -g .
+npm link          # or: npm install -g .
 ```
 
-## 快速开始
+## Quick start
 
 ```bash
 poe-wiki-cli search fireball
@@ -80,15 +82,15 @@ poe-wiki-cli doctor
 
 # PoE2
 poe-wiki-cli search fireball --game poe2
-poe-wiki-cli page "https://poe2db.tw/us/Waystone"        # 按域名自动识别，无需 --game
+poe-wiki-cli page "https://poe2db.tw/us/Waystone"        # detected from the hostname, no --game needed
 poe-wiki-cli league --game poe2
 ```
 
-## 命令
+## Commands
 
 ### `search <query...>`
 
-默认同时查两个站点：先做 poedb 的跳转式搜索，命中则作为第一条结果（`source: "poedb"`, `kind: "page"`），再查 poewiki 的搜索接口（`generator=search` + `prop=extracts`，一次请求拿到条目开头的纯文本简介）。
+By default both sites are queried: first poedb's redirect-style search, where a hit becomes the first result (`source: "poedb"`, `kind: "page"`), then the poewiki search API (`generator=search` + `prop=extracts`, which returns a plain-text intro taken from the start of the article in a single request).
 
 ```bash
 $ poe-wiki-cli search fireball --limit 1
@@ -102,25 +104,25 @@ locale: us
   Fireball is a spell that fires a projectile, dealing fire damage with an increased chance to Ignite.
 ```
 
-poedb 未命中不算错误（poewiki 通常仍有结果）；两边都为空才返回「未找到」。poewiki 的摘要是条目开头的纯文本（`generator=search` + `prop=extracts`），不是 MediaWiki 默认那种从句子中间截断的高亮片段。
+A miss on poedb is not an error (poewiki usually still has results); only when both are empty does the command return "not found". The poewiki snippet is plain text from the beginning of the article (`generator=search` + `prop=extracts`), not MediaWiki's default highlighted fragment cut off mid-sentence.
 
-| 选项 | 说明 |
+| Option | Description |
 | --- | --- |
-| `-g, --game <poe1\|poe2>` | 资料库版本：poe1 → poedb/poewiki，poe2 → poe2db/poe2wiki，默认 `poe1` |
-| `-s, --source <both\|poedb\|wiki>` | 数据源，默认 `both` |
-| `-l, --lang <us\|tw\|cn\|kr\|ru\|jp\|fr\|de\|th\|pt\|sp>` | 资料库语言，默认按查询词推断 |
-| `-n, --limit <n>` | wiki 结果上限，默认 8 |
-| `-j, --json` | 输出 JSON |
-| `--no-cache` | 跳过本地缓存 |
-| `--timeout <ms>` | 请求超时，默认 20000 |
+| `-g, --game <poe1\|poe2>` | Game: poe1 → poedb/poewiki, poe2 → poe2db/poe2wiki. Default `poe1` |
+| `-s, --source <both\|poedb\|wiki>` | Data source. Default `both` |
+| `-l, --lang <us\|tw\|cn\|kr\|ru\|jp\|fr\|de\|th\|pt\|sp>` | Database language; inferred from the query by default |
+| `-n, --limit <n>` | Maximum number of wiki results. Default 8 |
+| `-j, --json` | Emit JSON |
+| `--no-cache` | Skip the local cache |
+| `--timeout <ms>` | Request timeout. Default 20000 |
 
 ### `page <target>`
 
-抓取单个页面并输出 markdown。`target` 支持三种写法：
+Fetches a single page and prints markdown. `target` accepts three forms:
 
-- 完整 URL：`https://poedb.tw/cn/Headhunter`、`https://www.poewiki.net/wiki/Endgame`、`https://poe2db.tw/us/Waystone`（站点与游戏版本都由 host 决定，会覆盖 `--game`）
-- 站点前缀：`poedb:Headhunter`、`wiki:Iron Reflexes`、`poe2db:Waystone`、`poe2wiki:Endgame`
-- 裸标题：默认先尝试 db 站，未命中再取 wiki
+- Full URL: `https://poedb.tw/cn/Headhunter`, `https://www.poewiki.net/wiki/Endgame`, `https://poe2db.tw/us/Waystone` (both the site and the game come from the host, overriding `--game`)
+- Site prefix: `poedb:Headhunter`, `wiki:Iron Reflexes`, `poe2db:Waystone`, `poe2wiki:Endgame`
+- Bare title: tries the db site first, falls back to the wiki
 
 ```bash
 $ poe-wiki-cli page Headhunter --source poedb
@@ -144,30 +146,30 @@ Requires Level 40
 - When you Kill a Rare monster, you gain its Modifiers for 60 seconds
 ```
 
-| 选项 | 说明 |
+| Option | Description |
 | --- | --- |
-| `-g, --game <poe1\|poe2>` | 资料库版本，默认 `poe1`；传 URL 时以 URL 为准 |
-| `-s, --source <auto\|both\|poedb\|wiki>` | 数据源，默认 `auto`（先 db 站后 wiki 兜底） |
-| `-l, --lang <lang>` | 资料库语言，默认按标题推断 |
-| `--max-chars <n>` | 正文上限，默认 40000；`--html` 时默认 0（不截断） |
-| `--raw` | 只输出正文，省略标题与元信息 |
-| `--sections` | 额外输出章节大纲（JSON 下为 `sections` 数组） |
-| `--html` | 直接输出原始 HTML，不做 markdown 转换（会去掉脚本/样式/导航等噪声） |
-| `-j, --json` | 输出 JSON |
-| `--no-cache` | 跳过本地缓存 |
-| `--timeout <ms>` | 请求超时，默认 20000 |
+| `-g, --game <poe1\|poe2>` | Game. Default `poe1`; a full URL takes precedence |
+| `-s, --source <auto\|both\|poedb\|wiki>` | Data source. Default `auto` (db site first, wiki as fallback) |
+| `-l, --lang <lang>` | Database language; inferred from the title by default |
+| `--max-chars <n>` | Body length cap. Default 40000; with `--html` the default is 0 (no truncation) |
+| `--raw` | Print the body only, omitting the title and metadata |
+| `--sections` | Also print the section outline (exposed as a `sections` array in JSON) |
+| `--html` | Print raw HTML without markdown conversion (scripts, styles, navigation and other noise are stripped) |
+| `-j, --json` | Emit JSON |
+| `--no-cache` | Skip the local cache |
+| `--timeout <ms>` | Request timeout. Default 20000 |
 
-`--html` 与 `--raw` 互斥，同时使用会以退出码 1 结束。`--html` 的 JSON 字段是 `html` 而不是 `markdown`：
+`--html` and `--raw` are mutually exclusive; using both exits with code 1. With `--html` the JSON field is `html` rather than `markdown`:
 
 ```json
 { "ok": true, "game": "poe1", "source": "poedb", "title": "Home", "url": "https://poedb.tw/us/", "html": "<!DOCTYPE html>…", "truncated": false }
 ```
 
-`source` 的取值是**实际站点**：`poedb` / `poewiki` / `poe2db` / `poe2wiki`，配合 `game` 字段就能确定数据来自哪一版游戏。poewiki 的 `--html` 输出 `action=parse` 返回的 `parse.text` 片段。
+`source` is the **actual site**: `poedb` / `poewiki` / `poe2db` / `poe2wiki`. Together with the `game` field you can tell exactly which game the data came from. For poewiki, `--html` prints the `parse.text` fragment returned by `action=parse`.
 
 ### `league`
 
-读取资料库首页的赛季/版本卡片，给出当前/下一个赛季与版本汇总。PoE1 读 poedb 首页，PoE2 读 poe2db 首页（`--game poe2`）。
+Reads the league/version cards from the data site homepage and reports the current and next league along with a version summary. PoE1 reads the poedb homepage; PoE2 reads the poe2db homepage (`--game poe2`).
 
 ```bash
 $ poe-wiki-cli league
@@ -185,16 +187,16 @@ Tencent · poedb.tw/cn
   patch     3.30 Covens
 ```
 
-| 选项 | 说明 |
+| Option | Description |
 | --- | --- |
-| `-g, --game <poe1\|poe2>` | 资料库版本，默认 `poe1` |
-| `--realm <both\|us\|cn>` | 服务器，默认 `both` |
-| `--patch` | 展开最新版本的汇总链接 |
-| `-j, --json` | 输出 JSON |
-| `--no-cache` | 跳过本地缓存 |
-| `--timeout <ms>` | 请求超时，默认 20000 |
+| `-g, --game <poe1\|poe2>` | Game. Default `poe1` |
+| `--realm <both\|us\|cn>` | Realm. Default `both` |
+| `--patch` | Expand the summary links for the newest version |
+| `-j, --json` | Emit JSON |
+| `--no-cache` | Skip the local cache |
+| `--timeout <ms>` | Request timeout. Default 20000 |
 
-PoE2 的卡片语义不同：没有「赛季」，而是版本（`0.5.5`、`1.0`），并且当前版本会带一个结束时间。`--game poe2` 时：
+PoE2 cards mean something different: there are no "leagues", only game versions (`0.5.5`, `1.0`), and the current version also carries an end date. With `--game poe2`:
 
 ```bash
 $ poe-wiki-cli league --game poe2
@@ -214,9 +216,9 @@ Tencent · poe2db.tw/cn
             starts         2026-12-18 02:00 UTC · 2026-12-18 10:00 (UTC+08:00)  in 34d 18h
 ```
 
-两个服的 1.0 上线时间不同（国际服 12-11、腾讯服 12-18），这也是为什么排期必须现查。
+The two realms get 1.0 at different times (December 11 internationally, December 18 on Tencent), which is exactly why schedules have to be looked up rather than assumed.
 
-`--patch` 会把该服版本号最大的那张汇总卡展开：
+`--patch` expands the summary card with the highest version number for that realm:
 
 ```bash
 $ poe-wiki-cli league --realm us --patch
@@ -229,9 +231,9 @@ International · poedb.tw/us
     Mechanism   Covens League · Version 3.30.0 · Unique · Item · Wickerman · Threads of Creation
 ```
 
-时间一律按系统时区渲染：先给 UTC，再给本地时间与偏移。相对时间在渲染时计算，因此 JSON 里给的是绝对时间戳，文本输出里的「in 13h 6m」不会过期。
+All timestamps are rendered in the system time zone: UTC first, then local time with its offset. Relative times are computed at render time, so JSON carries absolute timestamps and the "in 13h 6m" in text output never goes stale.
 
-JSON 结构：
+JSON shape:
 
 ```jsonc
 {
@@ -256,15 +258,15 @@ JSON 结构：
 }
 ```
 
-`current` / `next` / `patch` 都可能缺省（字段不存在，而不是 `null`）。
+`current` / `next` / `patch` may all be absent (the field is missing entirely rather than set to `null`).
 
 ### `doctor`
 
-默认同时探测 PoE1 与 PoE2 的四个端点，输出 URL、状态、耗时、是否被拦截、内容是否含预期标记。任一端点不健康时退出码为 4。
+By default it probes all four endpoints across PoE1 and PoE2, printing URL, status, latency, whether the response was blocked, and whether the content contains the expected marker. Any unhealthy endpoint makes the command exit with code 4.
 
-| 选项 | 说明 |
+| Option | Description |
 | --- | --- |
-| `-g, --game <both\|poe1\|poe2>` | 探测范围，默认 `both` |
+| `-g, --game <both\|poe1\|poe2>` | Scope of the probe. Default `both` |
 
 ```bash
 $ poe-wiki-cli doctor
@@ -274,124 +276,124 @@ poe2db   ok   HTTP 200    498ms  page-content ✓  https://poe2db.tw/us/
 poe2wiki ok   HTTP 200    731ms  generator ✓  https://www.poe2wiki.net/w/api.php?action=query&meta=siteinfo&format=json
 ```
 
-## PoE2 支持
+## PoE2 support
 
-`--game poe2` 会把两个数据源整体切到 PoE2：
+`--game poe2` switches both data sources over to PoE2:
 
-| | PoE1（默认） | PoE2 |
+| | PoE1 (default) | PoE2 |
 | --- | --- | --- |
-| 数据站 | `poedb.tw` | `poe2db.tw` |
+| Database | `poedb.tw` | `poe2db.tw` |
 | Wiki | `www.poewiki.net` | `www.poe2wiki.net` |
 
-两代用的是同一套平台（db 站同一套模板，wiki 都是 MediaWiki），所以解析、语言列表、缓存策略完全一致，差异只在内容。
+Both generations run on the same platform (the same db-site templates, MediaWiki for both wikis), so parsing, the language list, and caching behave identically — only the content differs.
 
-**术语不能照搬 PoE1**：
+**Do not carry PoE1 terminology over:**
 
-- 宝石统一叫 **Gem**，升级/制作靠 **Uncut Skill Gem / Uncut Support Gem / Uncut Spirit Gem**
-- 异界地图是 **Waystone**（在 Map Device 激活），不是 map item
-- 新增资源 **Spirit**（保留给持续增益、永久召唤物、触发类 meta gem）
-- 天赋树页面标题是 **Passive Skill Tree**
+- Gems are all **Gem**; leveling and crafting use **Uncut Skill Gem / Uncut Support Gem / Uncut Spirit Gem**
+- Endgame maps are **Waystone**s (activated in the Map Device), not map items
+- **Spirit** is a new resource (reserved for persistent buffs, permanent minions, and trigger meta gems)
+- The passive tree page is titled **Passive Skill Tree**
 
-**索引页体量更大**：poe2db 的 `/us/Support_Gems` 约 3.6 MB、`/us/Skill_Gems` 约 2.1 MB。查具体条目，别整页拉。
+**Index pages are much larger:** poe2db's `/us/Support_Gems` is about 3.6 MB and `/us/Skill_Gems` about 2.1 MB. Look up specific entries instead of pulling the whole page.
 
-**赛季卡片语义不同**：PoE2 没有「赛季」，卡片是版本（`0.5.5`、`1.0`），当前版本额外带 `ends`，`next` 指向下一个大版本。详见上面 `league` 一节。
+**League cards mean something different:** PoE2 has no leagues; the cards are game versions (`0.5.5`, `1.0`), the current one carries an extra `ends`, and `next` points at the next major version. See `league` above.
 
-## 中文查询
+## Chinese-language queries
 
-poedb / poe2db 的搜索语言必须和站点 locale 一致，否则一定落回首页：`/cn/search?q=猎首` 命中 `/cn/Headhunter`，而 `/us/search?q=猎首` 只会回到 `/us/`。
+poedb / poe2db require the search language to match the site locale, otherwise the request always falls back to the homepage: `/cn/search?q=猎首` hits `/cn/Headhunter`, while `/us/search?q=猎首` just returns `/us/`.
 
-因此本工具按查询词自动推断 locale：
+The tool therefore infers the locale from the query:
 
-- 含汉字（`\p{Script=Han}`）→ `cn`
-- 其它 → `us`
-- 显式传 `--lang` 时一律以用户值为准
+- Contains Han characters (`\p{Script=Han}`) → `cn`
+- Anything else → `us`
+- An explicit `--lang` always wins
 
 ```bash
-poe-wiki-cli search 猎首              # 走 /cn/search，命中 /cn/Headhunter
-poe-wiki-cli page 火球 --source poedb # 输出中文正文
-poe-wiki-cli page 獵首 --lang tw      # 繁体中文站
+poe-wiki-cli search 猎首              # uses /cn/search, hits /cn/Headhunter
+poe-wiki-cli page 火球 --source poedb # prints the Chinese article
+poe-wiki-cli page 獵首 --lang tw      # Traditional Chinese site
 ```
 
-JSON 与文本输出都会带上实际使用的 `locale`。注意 poedb 中文页的 URL slug 仍是英文：`https://poedb.tw/cn/Headhunter`。
+Both JSON and text output include the `locale` that was actually used. Note that Chinese pages on poedb still use English URL slugs: `https://poedb.tw/cn/Headhunter`.
 
-## 输出与退出码
+## Output and exit codes
 
-| 退出码 | 含义 |
+| Exit code | Meaning |
 | --- | --- |
-| 0 | 成功 |
-| 1 | 用法错误（参数非法、`--html` 与 `--raw` 冲突等） |
-| 2 | 未找到（两站都没有结果，或 poedb 没有对应页面） |
-| 3 | 被反爬验证页拦截 |
-| 4 | 网络或 HTTP 错误（含 doctor 探测失败） |
+| 0 | Success |
+| 1 | Usage error (invalid argument, `--html` together with `--raw`, etc.) |
+| 2 | Not found (neither site has a result, or poedb has no such page) |
+| 3 | Blocked by a bot-protection challenge page |
+| 4 | Network or HTTP error (including a failed `doctor` probe) |
 
-文本模式下错误写到 stderr：
+In text mode, errors are written to stderr (the CLI's own messages are currently in Chinese):
 
 ```
 错误: poedb 没有「skill gem」对应的页面（locale: us）。
 提示: poedb 的搜索区分大小写，可换用更短的英文关键词；中文标题请配 --lang cn。
 ```
 
-`--json` 出错时输出：
+With `--json`, errors look like this:
 
 ```json
 { "ok": false, "error": { "code": "NOT_FOUND", "message": "…", "hint": "…" } }
 ```
 
-## 缓存
+## Caching
 
-- Windows：`%LOCALAPPDATA%\poe-wiki-cli\cache`
-- 其它平台：`$XDG_CACHE_HOME/poe-wiki-cli`，未设置时 `~/.cache/poe-wiki-cli`
+- Windows: `%LOCALAPPDATA%\poe-wiki-cli\cache`
+- Other platforms: `$XDG_CACHE_HOME/poe-wiki-cli`, or `~/.cache/poe-wiki-cli` when unset
 
-每个 URL 一个 `<sha256(url)>.json`，内容 `{url, fetchedAt, body}`。TTL：页面 3600 秒，搜索与 `league` 300 秒。缓存读写失败会静默降级，不影响查询；`--no-cache` 既不读也不写。
+One `<sha256(url)>.json` per URL, containing `{url, fetchedAt, body}`. TTL: 3600 seconds for pages, 300 seconds for search and `league`. Cache read/write failures degrade silently and never break a query; `--no-cache` neither reads nor writes.
 
-## 为什么不能用 Mozilla 开头的 UA
+## Why the User-Agent must not start with Mozilla
 
-poewiki.net 与 poe2wiki.net 都前置了 [Anubis](https://anubis.techaro.lol/) 反爬，策略是**只挑战 `Mozilla/` 前缀的 User-Agent**。用浏览器 UA 请求时，服务端返回的是 HTTP **200** 的 7.5KB 验证页，正文是 `Making sure you're not a bot!`，而不是真页面——只看状态码会以为请求成功。
+Both poewiki.net and poe2wiki.net sit behind [Anubis](https://anubis.techaro.lol/) bot protection, which **only challenges User-Agents prefixed with `Mozilla/`**. With a browser UA the server returns a 7.5 KB challenge page with HTTP **200** and the body `Making sure you're not a bot!` instead of the real page — checking only the status code makes the request look successful.
 
-非 Mozilla 前缀的 UA（`curl/8.4.0`、`python-httpx/0.27.0`、自定义 `Xxx/1.0`）反而直接拿到完整页面。poedb.tw 对 UA 不敏感。所以本工具统一使用：
+UAs without the Mozilla prefix (`curl/8.4.0`, `python-httpx/0.27.0`, a custom `Xxx/1.0`) get the full page directly. poedb.tw doesn't care about the UA at all. This tool therefore always sends:
 
 ```
 poe-wiki-cli/<version> (+https://github.com/sage-z-cn/poe-wiki-cli)
 ```
 
-并且 HTTP 层会显式检测验证页（响应含 `Making sure you're not a bot`，或 wiki 响应既没有 `mw-parser-output` 也没有 `"parse"` 字段），命中就抛 `BlockedError`、退出码 3，而不是把验证页当正文返回。
+The HTTP layer also detects the challenge page explicitly (the body contains `Making sure you're not a bot`, or a wiki response has neither `mw-parser-output` nor a `"parse"` field) and raises `BlockedError` with exit code 3 instead of returning the challenge page as content.
 
-## 解析失败时怎么办
+## When parsing fails
 
-`league` 依赖 poedb 首页的卡片结构。站点改版时它不会静默给出空结果：文本模式会在对应服务器下打一行提示，JSON 里对应 realm 会带 `warnings`：
+`league` depends on the card structure of the poedb homepage. It does not silently return empty results when the site is redesigned: in text mode it prints a warning under the affected realm, and in JSON that realm carries `warnings`:
 
 ```
 Tencent · poedb.tw/cn
   ! 未解析到赛季卡片，可能是首页结构变了。兜底：poe-wiki-cli page https://poedb.tw/cn/ --html
 ```
 
-兜底命令是 `page` 的 `--html`：
+The fallback is `page --html`:
 
 ```bash
 poe-wiki-cli page https://poedb.tw/us/ --html --max-chars 20000
 ```
 
-然后按下面的特征人工确认结构：
+Then confirm the structure by hand against these markers:
 
-1. 赛季卡片是 `div.card`，标题在 `h5.card-header`，其中带一个 `<small>` 版本号（如 `3.30`）；
-2. 计时时间是 `data-displaytime` 属性的 Unix 秒（UTC），紧跟着的那个 `div` 才是标签文本（`Realm down` / `Starts in` / `已运行` / `开始倒数`）；
-3. 版本汇总卡片同在一个 `div.card` 里，正文是若干 `.itemList > ul`，每组的第一个 `li > span.disabled` 是分组名，其余 `li > a` 是链接；
-4. 商城特卖卡片带 `class="special"`、且标题里没有版本号 `<small>`，会被忽略。
+1. League cards are `div.card`; the title lives in `h5.card-header` and contains a `<small>` version badge (e.g. `3.30`);
+2. The countdown is the Unix-seconds (UTC) `data-displaytime` attribute; the `div` immediately after it holds the label text (`Realm down` / `Starts in` / `已运行` / `开始倒数`);
+3. The version summary card lives in the same `div.card`; its body is a series of `.itemList > ul`, where in each group the first `li > span.disabled` is the group name and the remaining `li > a` are links;
+4. The stash tab sale card has `class="special"` and no version `<small>` in its title, so it is ignored.
 
-如果只有某一服失败（网络问题），命令仍会返回另一服的数据并以 0 退出；只有全部服务器都解析不到卡片时才返回 2，全部抓取失败时返回 4。
+If only one realm fails (a network problem), the command still returns the other realm's data and exits with 0. It returns 2 only when no realm yields cards, and 4 when every fetch fails.
 
-## 开发
+## Development
 
 ```bash
 npm install
-npm run build       # tsc，产物在 dist/
-npm test            # node --test，跑编译后的测试
+npm run build       # tsc, output in dist/
+npm test            # node --test, runs the compiled tests
 npm run typecheck
 npm run smoke       # node dist/src/cli.js doctor
 node dist/src/cli.js --help
 ```
 
-`npm run dev` 预留了 `tsx src/cli.ts`，需要自行安装 `tsx`。
+`npm run dev` is wired to `tsx src/cli.ts`; install `tsx` yourself to use it.
 
 ## License
 

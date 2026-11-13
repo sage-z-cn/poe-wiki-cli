@@ -1,91 +1,91 @@
-# 让 agent 自动安装 poe-wiki-cli
+# Automated poe-wiki-cli installation for agents
 
-这份文档是写给 **agent** 看的。人类用户只需要把 README 里那句话发给自己的 agent，agent 会按下面的步骤执行。
+This document is written for **agents**. Human users only need to send the snippet from the README to their agent; the agent then follows the steps below.
 
-安装目标有两个，缺一不可：
+There are two installation targets, and both are required:
 
-1. 命令行工具 `poe-wiki-cli`（能直接跑）
-2. 对应的 skill（让 agent 知道什么时候该用它、怎么用）
+1. The `poe-wiki-cli` command-line tool (runnable as-is)
+2. The matching skill (so the agent knows when to use it and how)
 
 ---
 
-## 0. 先探测环境
+## 0. Probe the environment first
 
 ```bash
-node -v          # 需要 >= 20
+node -v          # must be >= 20
 poe-wiki-cli --version
 ```
 
-- `node -v` 低于 20：停止，告诉用户升级 Node.js，不要继续。
-- `poe-wiki-cli --version` 已经能输出版本号：跳到第 2 步。
-- 命令不存在：继续第 1 步。
+- `node -v` below 20: stop, tell the user to upgrade Node.js, do not continue.
+- `poe-wiki-cli --version` already prints a version: skip to step 2.
+- Command not found: continue with step 1.
 
-同时确认当前 agent 属于哪一种宿主，因为 skill 的安装路径不同：
+Also determine which host the current agent belongs to, because the skill install path differs:
 
-| 宿主 | 全局 skill 目录 |
+| Host | Global skill directory |
 |---|---|
 | opencode | `~/.config/opencode/skills/` |
 | Claude Code | `~/.claude/skills/` |
-| 其它 | 优先项目级 `.opencode/skills/`，找不到再问用户 |
+| Other | Prefer the project-level `.opencode/skills/`; if that doesn't fit, ask the user |
 
-Windows 下 `~` 即 `%USERPROFILE%`。
+On Windows, `~` means `%USERPROFILE%`.
 
 ---
 
-## 1. 安装 CLI
+## 1. Install the CLI
 
-首选全局安装：
+Prefer a global install:
 
 ```bash
 npm i -g poe-wiki-cli
 ```
 
-如果 npm 报 `EACCES` / 权限不足，**不要**用 `sudo` 硬装，改用免安装方式：
+If npm reports `EACCES` / insufficient permissions, do **not** force it with `sudo`; use the no-install path instead:
 
 ```bash
 npx -y poe-wiki-cli@latest --version
 ```
 
-采用 `npx` 时，后面所有命令都要写成 `npx -y poe-wiki-cli@latest <子命令>`，并在最后告诉用户这一点。
+Once `npx` is in play, every subsequent command must be prefixed with `npx -y poe-wiki-cli@latest`, and you must tell the user this at the end.
 
-如果 npm 返回 `E404`（包尚未发布），改用源码安装，并让用户确认代码目录：
+If npm returns `E404` (the package isn't published yet), install from source instead, and have the user confirm the code directory:
 
 ```bash
 git clone https://github.com/sage-z-cn/poe-wiki-cli.git
 cd poe-wiki-cli
 npm install
 npm run build
-npm link          # 或 npm i -g .
+npm link          # or: npm i -g .
 ```
 
-安装完成后立刻自检：
+Run a self-check immediately after installing:
 
 ```bash
 poe-wiki-cli doctor
 ```
 
-期望两个站点都 `ok`。若 poewiki 一项报「被拦截」，先读第 4 步再决定是否算失败。
+Expect every site to report `ok`. If the poewiki entry reports "blocked", read step 4 before deciding whether that counts as a failure.
 
 ---
 
-## 2. 安装 skill
+## 2. Install the skill
 
-skill 就是一份 `SKILL.md`，**内容必须原样落盘，不要改写、不要精简、不要自行补充**。
+The skill is a single `SKILL.md`. **Its content must land on disk verbatim — do not edit it, trim it, or add to it.**
 
-下载地址（与本文档同一个仓库）：
+Download URL (same repository as this document):
 
 ```
 https://raw.githubusercontent.com/sage-z-cn/poe-wiki-cli/refs/heads/main/skill/SKILL.md
 ```
 
-### 2.1 全局安装（推荐，所有项目可用）
+### 2.1 Global install (recommended; available to all projects)
 
 ```bash
 mkdir -p ~/.config/opencode/skills/poe-wiki-cli      # opencode
 mkdir -p ~/.claude/skills/poe-wiki-cli               # Claude Code
 ```
 
-把下载到的内容写入 `<上面对应的目录>/SKILL.md`。Windows PowerShell 示例：
+Write the downloaded content to `<the matching directory above>/SKILL.md`. Windows PowerShell example:
 
 ```powershell
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli" | Out-Null
@@ -93,41 +93,41 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sage-z-cn/poe-wiki-cli
   -OutFile "$env:USERPROFILE\.config\opencode\skills\poe-wiki-cli\SKILL.md"
 ```
 
-macOS / Linux：
+macOS / Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sage-z-cn/poe-wiki-cli/refs/heads/main/skill/SKILL.md \
   -o ~/.config/opencode/skills/poe-wiki-cli/SKILL.md
 ```
 
-### 2.2 项目级安装（只对某个仓库生效）
+### 2.2 Project-level install (applies to a single repository)
 
-用户明确说「只在这个项目里用」时，写到项目根：
+When the user explicitly says "this project only", write to the project root:
 
 ```
 <repo>/.opencode/skills/poe-wiki-cli/SKILL.md
 ```
 
-### 2.3 从本地源码安装
+### 2.3 Install from local source
 
-如果用户是 clone 下来开发的，skill 就在仓库里，直接复制即可，不必下载：
+If the user cloned the repository for development, the skill is already there — just copy it, no download needed:
 
 ```bash
 mkdir -p ~/.config/opencode/skills/poe-wiki-cli
 cp skill/SKILL.md ~/.config/opencode/skills/poe-wiki-cli/SKILL.md
 ```
 
-### 2.4 校验
+### 2.4 Verify
 
-- 文件存在且非空；
-- 首行是 `---`，frontmatter 里有 `name: poe-wiki-cli`；
-- 文件大小约 13 KB。相差太多说明下载被截断，重下。
+- The file exists and is non-empty;
+- The first line is `---` and the frontmatter contains `name: poe-wiki-cli`;
+- The file is roughly 13 KB. A large deviation means the download was truncated — download it again.
 
 ---
 
-## 3. 验收
+## 3. Acceptance
 
-真正跑一次，不要只看文件在不在：
+Actually run it; don't just check that the files exist:
 
 ```bash
 poe-wiki-cli doctor
@@ -136,30 +136,30 @@ poe-wiki-cli league --realm cn
 poe-wiki-cli search fireball --game poe2 --limit 1
 ```
 
-三条都应正常返回。`league` 若报「未解析到赛季卡片」，说明 poedb 首页改版了，按 skill 里的降级说明手工读 `--html`，并在汇报里明确指出解析失败。
+All of these should return normally. If `league` reports "no league cards parsed", the poedb homepage layout has changed: follow the fallback guidance in the skill and read `--html` manually, and state the parsing failure explicitly in your report.
 
-最后告诉用户：
+Finally, tell the user:
 
-- CLI 版本号与安装方式（全局 / npx / 源码）
-- skill 落盘路径
-- **需要重启 agent 会话**，skill 才会被发现
-- 常用命令三条即可，不要贴完整文档
+- The CLI version and how it was installed (global / npx / source)
+- Where the skill file was written
+- **That the agent session must be restarted** before the skill is discovered
+- Three common commands at most — do not paste the full documentation
 
 ---
 
-## 4. 常见失败
+## 4. Common failures
 
-| 现象 | 处理 |
+| Symptom | What to do |
 |---|---|
-| `poe-wiki-cli` 找不到 | 全局安装的 bin 目录不在 PATH，改用 `npx -y poe-wiki-cli@latest`，或让用户重启终端 |
-| `doctor` 报 poewiki 被拦截（退出码 3） | 网络链路上有代理改写了 User-Agent。不要自己改 UA 绕，先告诉用户；本工具刻意用非 Mozilla UA 才不被 Anubis 拦 |
-| npm 装包极慢 | 换镜像：`npm i -g poe-wiki-cli --registry=https://registry.npmmirror.com` |
-| skill 装完 agent 不认 | 检查目录层级是否多了一层（必须是 `skills/poe-wiki-cli/SKILL.md`），并确认已重启会话 |
+| `poe-wiki-cli` not found | The global bin directory isn't on PATH. Use `npx -y poe-wiki-cli@latest`, or have the user restart the terminal |
+| `doctor` reports poewiki as blocked (exit code 3) | Something on the network path is rewriting the User-Agent. Don't work around it by changing the UA yourself; tell the user first. This tool deliberately uses a non-Mozilla UA, which is what keeps Anubis from blocking it |
+| npm installs very slowly | Switch to a mirror: `npm i -g poe-wiki-cli --registry=https://registry.npmmirror.com` |
+| The agent doesn't recognize the skill after installation | Check for an extra directory level (it must be `skills/poe-wiki-cli/SKILL.md`) and confirm the session was restarted |
 
 ---
 
-## 5. 不要做的事
+## 5. Do not
 
-- 不要修改 `SKILL.md` 的内容或文件名；
-- 不要为了让命令跑通而把 UA 改成 `Mozilla/...`（会被 poewiki 的反爬直接挡掉，且会误导用户）；
-- 不要在没跑过 `doctor` 的情况下就宣布安装成功。
+- Modify `SKILL.md` — neither its content nor its filename;
+- Change the UA to `Mozilla/...` just to make a command work (poewiki's bot protection blocks it outright, and it misleads the user);
+- Declare the installation successful without having run `doctor`.
