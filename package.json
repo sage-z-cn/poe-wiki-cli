@@ -1,6 +1,6 @@
 {
   "name": "poe-wiki-cli",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Query Path of Exile knowledge from poedb.tw and poewiki.net in clean, machine-readable markdown.",
   "type": "module",
   "private": false,
@@ -20,7 +20,9 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"dist/test/*.test.js\"",
     "smoke": "node dist/src/cli.js doctor",
-    "prepublishOnly": "npm run build"
+    "sync-skill": "node scripts/sync-skill-version.mjs",
+    "version": "npm run sync-skill",
+    "prepublishOnly": "npm run sync-skill && npm run build"
   },
   "engines": {
     "node": ">=20"
