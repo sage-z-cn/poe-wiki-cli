@@ -40,6 +40,21 @@ test("含 colspan 的表格降级为逐行列表", () => {
   assert.doesNotMatch(markdown, /\| --- \|/);
 });
 
+test("图标表头回退到 title/alt，正文单元格不受影响", () => {
+  const html = `<table>
+    <tr>
+      <th>Level</th>
+      <th><span title="Required level"><img alt="Required level" src="level.png" /></span></th>
+      <th><span title="Required intelligence"><img alt="" src="int.png" /></span></th>
+    </tr>
+    <tr><td>20</td><td>70</td><td><img alt="decorative icon" src="x.png" /></td></tr>
+  </table>`;
+  const markdown = htmlToMarkdown(html);
+  assert.match(markdown, /\| Level \| Required level \| Required intelligence \|/);
+  assert.match(markdown, /\| 20 \| 70 \|  \|/);
+  assert.doesNotMatch(markdown, /decorative icon/);
+});
+
 test("列表：有序、无序与嵌套缩进", () => {
   const html = `<ul><li>Alpha</li><li>Beta<ul><li>Beta-1</li><li>Beta-2</li></ul></li></ul>
     <ol start="3"><li>Third</li><li>Fourth</li></ol>`;

@@ -575,7 +575,30 @@ function cellsOf(row: HTMLElement): HTMLElement[] {
 
 function tableCellText(cell: HTMLElement, context: RenderContext): string {
   const text = collapseSpace(renderChildren(cell, context));
-  return text.replace(/\|/g, "\\|");
+  const value = text || headerCellLabel(cell);
+  return value.replace(/\|/g, "\\|");
+}
+
+/**
+ * 表头常写成纯图标（如宝石等级表的「需求等级」「需求智力」），
+ * 可见文本被 <img> 吃掉后，语义只剩在 title / alt 上。
+ * 仅对 th 生效，避免正文单元格里的装饰图标混进数据。
+ */
+function headerCellLabel(cell: HTMLElement): string {
+  if ((cell.rawTagName ?? "").toLowerCase() !== "th") {
+    return "";
+  }
+  const ownTitle = cell.getAttribute("title")?.trim();
+  if (ownTitle) {
+    return ownTitle;
+  }
+  const titled = cell.querySelector("[title]");
+  const title = titled?.getAttribute("title")?.trim();
+  if (title) {
+    return title;
+  }
+  const image = cell.querySelector("img[alt]");
+  return image?.getAttribute("alt")?.trim() ?? "";
 }
 
 function resolveHref(href: string, baseUrl: string): string | null {
