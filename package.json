@@ -25,6 +25,9 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sage-z-cn/poe-wiki-cli.git"
