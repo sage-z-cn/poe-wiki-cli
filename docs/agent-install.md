@@ -133,6 +133,7 @@ cp skill/SKILL.md ~/.config/opencode/skills/poe-wiki-cli/SKILL.md
 poe-wiki-cli doctor
 poe-wiki-cli search fireball --limit 2
 poe-wiki-cli league --realm cn
+poe-wiki-cli search fireball --game poe2 --limit 1
 ```
 
 三条都应正常返回。`league` 若报「未解析到赛季卡片」，说明 poedb 首页改版了，按 skill 里的降级说明手工读 `--html`，并在汇报里明确指出解析失败。

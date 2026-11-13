@@ -6,6 +6,7 @@ import { runLeague, leagueExitCode, type LeagueReport } from "./commands/league.
 import { runPage, type PageResult } from "./commands/page.js";
 import { runSearch, type SearchOutcome } from "./commands/search.js";
 import { REALMS, type Realm } from "./sources/league.js";
+import { GAMES, type Game } from "./sites.js";
 import { LANGUAGES, type Lang, type PageDocument } from "./types.js";
 import { VERSION } from "./version.js";
 
@@ -20,6 +21,7 @@ interface CommonCliOptions {
   json?: boolean;
   cache?: boolean;
   timeout: string;
+  game: string;
 }
 
 interface SearchCliOptions extends CommonCliOptions {
@@ -47,14 +49,15 @@ async function main(): Promise<void> {
 
   program
     .name("poe-wiki-cli")
-    .description("查询 Path of Exile 资料站 poedb.tw 与 poewiki.net，输出干净、可机读的 markdown。")
+    .description("查询 Path of Exile 1/2 资料站（poedb、poe2db 与 poewiki、poe2wiki），输出干净、可机读的 markdown。")
     .version(VERSION, "-v, --version", "显示版本号")
     .showHelpAfterError();
 
   program
     .command("search")
-    .description("搜索 poedb 与 poewiki（默认两站都查）")
+    .description("搜索资料站与 wiki（默认两站都查，可用 --game 切换 PoE1/PoE2）")
     .argument("<query...>", "搜索关键词，可包含空格")
+    .option("-g, --game <game>", "游戏版本：poe1|poe2", "poe1")
     .option("-s, --source <source>", "数据源：both|poedb|wiki", "both")
     .option("-l, --lang <lang>", "poedb 语言（默认按查询词推断：中文→cn，其它→us）")
     .option("-n, --limit <n>", "poewiki 结果上限", "8")
@@ -67,6 +70,7 @@ async function main(): Promise<void> {
         throw new UsageError("搜索关键词不能为空。");
       }
       const outcome = await runSearch(query, {
+        game: parseGame(options.game),
         source: parseSource(options.source, ["both", "poedb", "wiki"] as const),
         lang: parseLang(options.lang),
         limit: parsePositiveInt(options.limit, "--limit"),
@@ -79,7 +83,8 @@ async function main(): Promise<void> {
   program
     .command("page")
     .description("抓取页面并输出 markdown")
-    .argument("<target>", "完整 URL、poedb:<标题>、wiki:<标题> 或裸标题")
+    .argument("<target>", "完整 URL、poedb:/poe2db:<标题>、wiki:/poe2wiki:<标题> 或裸标题")
+    .option("-g, --game <game>", "游戏版本：poe1|poe2（完整 URL 以 host 为准）", "poe1")
     .option("-s, --source <source>", "数据源：auto|both|poedb|wiki", "auto")
     .option("-l, --lang <lang>", "poedb 语言（默认按标题推断：中文→cn，其它→us）")
     .option("-j, --json", "输出机器可读的 JSON")
@@ -105,6 +110,7 @@ async function main(): Promise<void> {
           : parseNonNegativeInt(options.maxChars, "--max-chars");
 
       const document = await runPage(target, {
+        game: parseGame(options.game),
         source: parseSource(options.source, ["auto", "both", "poedb", "wiki"] as const),
         lang: parseLang(options.lang),
         timeoutMs: parsePositiveInt(options.timeout, "--timeout"),
@@ -118,11 +124,15 @@ async function main(): Promise<void> {
 
   program
     .command("doctor")
-    .description("诊断两个站点的可达性与反爬状态")
+    .description("诊断站点可达性与反爬状态（--game both 检查四个站点）")
+    .option("-g, --game <game>", "游戏版本：both|poe1|poe2", "both")
     .option("-j, --json", "输出机器可读的 JSON")
     .option("--timeout <ms>", "请求超时（毫秒）", "20000")
     .action(async (options: CommonCliOptions) => {
-      const checks = await runDoctor({ timeoutMs: parsePositiveInt(options.timeout, "--timeout") });
+      const checks = await runDoctor({
+        games: parseGames(options.game),
+        timeoutMs: parsePositiveInt(options.timeout, "--timeout"),
+      });
       printDoctor(checks, options.json === true);
       if (checks.some((check) => !check.ok)) {
         process.exitCode = EXIT_CODE.NETWORK;
@@ -131,7 +141,8 @@ async function main(): Promise<void> {
 
   program
     .command("league")
-    .description("查看 poedb 首页的赛季/版本信息")
+    .description("查看资料站首页的赛季/版本信息")
+    .option("-g, --game <game>", "游戏版本：poe1|poe2", "poe1")
     .option("--realm <realm>", "服务器：both|us|cn", "both")
     .option("--patch", "展开最新版本的汇总链接")
     .option("-j, --json", "输出机器可读的 JSON")
@@ -139,6 +150,7 @@ async function main(): Promise<void> {
     .option("--timeout <ms>", "请求超时（毫秒）", "20000")
     .action(async (options: LeagueCliOptions) => {
       const report = await runLeague({
+        game: parseGame(options.game),
         realms: parseRealm(options.realm),
         patch: options.patch === true,
         timeoutMs: parsePositiveInt(options.timeout, "--timeout"),
@@ -240,13 +252,19 @@ function printLeague(report: LeagueReport, patch: boolean, json: boolean): void 
 
   const blocks: string[] = [];
   for (const realm of report.realms) {
-    const lines = [`${realm.server === "tencent" ? "Tencent" : "International"} · poedb.tw/${realm.locale}`];
+    const host = hostOf(realm.url);
+    const lines = [`${realm.server === "tencent" ? "Tencent" : "International"} · ${host}/${realm.locale}`];
 
     if (realm.current) {
       lines.push(`  current   ${realm.current.version}  ${realm.current.name}`);
       lines.push(
         `            running since  ${formatStamp(realm.current.since)}  (${formatSpan(realm.current.runningSeconds)})`,
       );
+      if (realm.current.ends) {
+        lines.push(
+          `            ends           ${formatStamp(realm.current.ends)}  in ${formatSpan(secondsUntil(realm.current.ends))}`,
+        );
+      }
     }
 
     if (realm.next) {
@@ -289,6 +307,14 @@ function printLeague(report: LeagueReport, patch: boolean, json: boolean): void 
   }
 
   process.stdout.write(`${blocks.join("\n\n")}\n`);
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "poedb.tw";
+  }
 }
 
 function formatStamp(iso: string): string {
@@ -355,6 +381,22 @@ function parseRealm(value: string): Realm[] {
     return [normalized as Realm];
   }
   throw new UsageError(`不支持的服务器「${value}」。`, "可选值：both、us、cn。");
+}
+
+function parseGame(value: string): Game {
+  const normalized = value.trim().toLowerCase();
+  if ((GAMES as readonly string[]).includes(normalized)) {
+    return normalized as Game;
+  }
+  throw new UsageError(`不支持的游戏版本「${value}」。`, "可选值：poe1、poe2。");
+}
+
+function parseGames(value: string): Game[] {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "both") {
+    return [...GAMES];
+  }
+  return [parseGame(value)];
 }
 
 function parsePositiveInt(value: string, flag: string): number {

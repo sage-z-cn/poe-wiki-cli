@@ -3,7 +3,7 @@ import { VERSION } from "./version.js";
 
 /**
  * UA 必须是「非 Mozilla 前缀」，这不是风格问题而是硬性可用性要求：
- * poewiki.net 前置的 Anubis 反爬只挑战 Mozilla/* 的请求，被挑战时仍返回
+ * poewiki.net / poe2wiki.net 前置的 Anubis 反爬只挑战 Mozilla/* 的请求，被挑战时仍返回
  * HTTP 200 的 7.5KB 验证页（"Making sure you're not a bot!"），
  * 直接解析会得到空内容。换成本工具的 UA 可以稳定拿到完整页面。
  */

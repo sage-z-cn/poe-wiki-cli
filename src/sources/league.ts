@@ -1,6 +1,7 @@
 import { parse, type HTMLElement } from "node-html-parser";
 import { getText } from "../http.js";
 import { sanitizeHtml } from "../markdown.js";
+import { sitesFor, type Game } from "../sites.js";
 import type { Lang } from "../types.js";
 
 export const LEAGUE_TTL_SECONDS = 300;
@@ -24,6 +25,8 @@ export interface CurrentLeague {
   version: string;
   since: string;
   runningSeconds: number;
+  ends?: string;
+  endsInSeconds?: number;
 }
 
 export interface NextLeague {
@@ -41,6 +44,7 @@ export interface PatchSummary {
 }
 
 export interface RealmInfo {
+  game: Game;
   realm: Realm;
   server: ServerKind;
   locale: Lang;
@@ -52,18 +56,20 @@ export interface RealmInfo {
 }
 
 export interface LeagueFetchOptions {
+  game?: Game;
   timeoutMs?: number;
   noCache?: boolean;
   includeSections?: boolean;
 }
 
 export interface ParseLeagueOptions {
+  game?: Game;
   realm: Realm;
   includeSections?: boolean;
   now?: number;
 }
 
-type TimerKind = "running" | "starts" | "realmDown";
+type TimerKind = "running" | "starts" | "realmDown" | "ends";
 
 interface CardInfo {
   name: string;
@@ -74,7 +80,9 @@ interface CardInfo {
 }
 
 export async function fetchLeague(realm: Realm, options: LeagueFetchOptions = {}): Promise<RealmInfo> {
-  const url = `https://poedb.tw/${realm}/`;
+  const game = options.game ?? "poe1";
+  const sites = sitesFor(game);
+  const url = `${sites.dbOrigin}/${realm}/`;
   const response = await getText(url, {
     timeoutMs: options.timeoutMs,
     noCache: options.noCache,
@@ -83,6 +91,7 @@ export async function fetchLeague(realm: Realm, options: LeagueFetchOptions = {}
   });
 
   return parseLeagueHomepage(response.body, {
+    game,
     realm,
     includeSections: options.includeSections,
     now: Date.now(),
@@ -90,22 +99,25 @@ export async function fetchLeague(realm: Realm, options: LeagueFetchOptions = {}
 }
 
 /**
- * 解析 poedb 首页的赛季信息。首页里同时存在计时卡片（带 data-displaytime）
+ * 解析 poedb / poe2db 首页的赛季信息。首页里同时存在计时卡片（带 data-displaytime）
  * 和版本汇总卡片（带 itemList），并且还有商城特卖卡片混在同一个 row 里，
  * 所以靠「header 里是否带版本号 <small>」「是否 class=special」这两条来筛选，
  * 绝不能假设「第一张卡片」就是目标赛季。
  */
 export function parseLeagueHomepage(html: string, options: ParseLeagueOptions): RealmInfo {
+  const game = options.game ?? "poe1";
+  const origin = sitesFor(game).dbOrigin;
   const root = parse(sanitizeHtml(html), { comment: false });
   const locale = options.realm;
   const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
-  const cards = collectCards(root, locale);
+  const cards = collectCards(root, locale, origin);
 
   const info: RealmInfo = {
+    game,
     realm: options.realm,
     server: locale === "cn" ? "tencent" : "international",
     locale,
-    url: `https://poedb.tw/${locale}/`,
+    url: `${origin}/${locale}/`,
   };
 
   const running = cards
@@ -119,6 +131,11 @@ export function parseLeagueHomepage(html: string, options: ParseLeagueOptions): 
       since: new Date(running.timer.timestamp * 1000).toISOString(),
       runningSeconds: Math.max(0, nowSeconds - running.timer.timestamp),
     };
+    const endsAt = pickTimer(running.card, "ends");
+    if (endsAt !== undefined) {
+      info.current.ends = new Date(endsAt * 1000).toISOString();
+      info.current.endsInSeconds = Math.max(0, endsAt - nowSeconds);
+    }
   }
 
   const upcoming = cards
@@ -153,7 +170,7 @@ export function parseLeagueHomepage(html: string, options: ParseLeagueOptions): 
   return info;
 }
 
-function collectCards(root: HTMLElement, locale: Lang): CardInfo[] {
+function collectCards(root: HTMLElement, locale: Lang, origin: string): CardInfo[] {
   const cards: CardInfo[] = [];
 
   for (const element of root.querySelectorAll("div.card")) {
@@ -168,7 +185,8 @@ function collectCards(root: HTMLElement, locale: Lang): CardInfo[] {
     }
     const small = header.querySelector("small");
     const version = (small?.text ?? "").trim();
-    if (!/^\d+\.\d+$/.test(version)) {
+    // PoE2 的赛季版本是三段式（0.5.5），不能再用两段式正则过滤。
+    if (!/^\d+(\.\d+){1,2}$/.test(version)) {
       continue;
     }
 
@@ -190,14 +208,14 @@ function collectCards(root: HTMLElement, locale: Lang): CardInfo[] {
       }
     }
 
-    const sections = collectSections(element, locale);
+    const sections = collectSections(element, locale, origin);
     cards.push({ name, version, server, timers, sections });
   }
 
   return cards;
 }
 
-function collectSections(element: HTMLElement, locale: Lang): LeagueSection[] {
+function collectSections(element: HTMLElement, locale: Lang, origin: string): LeagueSection[] {
   const sections: LeagueSection[] = [];
 
   for (const list of element.querySelectorAll(".itemList")) {
@@ -222,7 +240,7 @@ function collectSections(element: HTMLElement, locale: Lang): LeagueSection[] {
         continue;
       }
       const text = collapse(anchor.text);
-      const url = resolveLink(anchor.getAttribute("href") ?? "", locale);
+      const url = resolveLink(anchor.getAttribute("href") ?? "", locale, origin);
       if (text && url) {
         links.push({ text, url });
       }
@@ -269,6 +287,10 @@ function classifyLabel(label: string): TimerKind | null {
   if (value.includes("realm down") || value.includes("服务器关闭") || value.includes("停机")) {
     return "realmDown";
   }
+  // 「结束倒数」必须排在「开始倒数」之前判断，否则会被 starts 规则吞掉。
+  if (value.includes("结束倒数") || value.includes("ends in") || value.includes("end in")) {
+    return "ends";
+  }
   if (value.includes("开始倒数") || value.includes("starts in") || value.includes("start")) {
     return "starts";
   }
@@ -299,7 +321,7 @@ function headerTextWithoutSmall(header: HTMLElement, small: HTMLElement | null):
 }
 
 function splitServer(rawName: string, locale: Lang): { name: string; server: ServerKind } {
-  const match = /^(.*?)\s*(腾讯服|国际服)$/.exec(rawName);
+  const match = /^(.*?)\s*[（(]?\s*(腾讯服|国际服)\s*[）)]?$/.exec(rawName);
   if (match) {
     return {
       name: match[1].trim(),
@@ -309,7 +331,7 @@ function splitServer(rawName: string, locale: Lang): { name: string; server: Ser
   return { name: rawName, server: locale === "cn" ? "tencent" : "international" };
 }
 
-function resolveLink(href: string, locale: Lang): string | null {
+function resolveLink(href: string, locale: Lang, origin: string): string | null {
   const value = href.trim();
   if (!value) {
     return null;
@@ -318,9 +340,9 @@ function resolveLink(href: string, locale: Lang): string | null {
     return value;
   }
   if (value.startsWith("/")) {
-    return `https://poedb.tw${value}`;
+    return `${origin}${value}`;
   }
-  return `https://poedb.tw/${locale}/${value}`;
+  return `${origin}/${locale}/${value}`;
 }
 
 function classTokens(element: HTMLElement): string[] {

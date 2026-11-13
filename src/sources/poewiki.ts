@@ -1,13 +1,12 @@
 import { BlockedError, getText, isBlockedBody, NetworkError, NotFoundError } from "../http.js";
 import { decodeHtmlEntities, htmlToMarkdown } from "../markdown.js";
-
-export const WIKI_ORIGIN = "https://www.poewiki.net";
-export const WIKI_API = `${WIKI_ORIGIN}/w/api.php`;
+import { sitesFor, type Game } from "../sites.js";
 
 const PAGE_TTL_SECONDS = 3600;
 const SEARCH_TTL_SECONDS = 300;
 
 export interface WikiOptions {
+  game?: Game;
   timeoutMs?: number;
   noCache?: boolean;
 }
@@ -21,12 +20,14 @@ export interface WikiSearchHit {
 }
 
 export interface WikiPage {
+  game: Game;
   title: string;
   url: string;
   markdown: string;
 }
 
 export interface WikiHtmlPage {
+  game: Game;
   title: string;
   url: string;
   html: string;
@@ -61,8 +62,10 @@ interface ParseResponse {
  * 对 agent 没有信息量；extracts 的 exintro 能给出条目开头。
  */
 export async function search(query: string, limit: number, options: WikiOptions = {}): Promise<WikiSearchHit[]> {
+  const game = options.game ?? "poe1";
+  const sites = sitesFor(game);
   const url =
-    `${WIKI_API}?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=${limit}` +
+    `${sites.wikiApi}?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=${limit}` +
     `&prop=extracts&exintro=1&explaintext=1&exchars=300&exlimit=max&format=json&formatversion=2`;
   const response = await getText(url, {
     timeoutMs: options.timeoutMs,
@@ -71,12 +74,12 @@ export async function search(query: string, limit: number, options: WikiOptions 
     accept: "application/json",
   });
 
-  const data = parseJson<SearchResponse>(response.body, url, `${WIKI_API}?action=query&generator=search`);
-  return parseSearchPages(data);
+  const data = parseJson<SearchResponse>(response.body, url, `${sites.wikiName} 搜索接口`, sites.wikiName);
+  return parseSearchPages(data, game);
 }
 
 /** generator 返回的顺序不保证与相关度一致，按 index 升序还原。 */
-export function parseSearchPages(data: SearchResponse): WikiSearchHit[] {
+export function parseSearchPages(data: SearchResponse, game: Game = "poe1"): WikiSearchHit[] {
   const pages = data.query?.pages;
   if (!pages) {
     return [];
@@ -88,7 +91,7 @@ export function parseSearchPages(data: SearchResponse): WikiSearchHit[] {
     .sort((a, b) => (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER))
     .map((page) => ({
       title: page.title as string,
-      url: pageUrl(page.title as string),
+      url: pageUrl(page.title as string, game),
       snippet: collapse(decodeHtmlEntities(page.extract ?? "")),
       size: 0,
       wordcount: 0,
@@ -96,16 +99,25 @@ export function parseSearchPages(data: SearchResponse): WikiSearchHit[] {
 }
 
 export async function fetchPage(title: string, options: WikiOptions = {}): Promise<WikiPage> {
+  const game = options.game ?? "poe1";
   const page = await loadPage(title, options);
-  return buildPage(page);
+  return {
+    game,
+    title: page.title,
+    url: pageUrl(page.title, game),
+    markdown: htmlToMarkdown(page.html, { baseUrl: pageUrl(page.title, game) }),
+  };
 }
 
 export async function fetchPageHtml(title: string, options: WikiOptions = {}): Promise<WikiHtmlPage> {
+  const game = options.game ?? "poe1";
   const page = await loadPage(title, options);
-  return { title: page.title, url: pageUrl(page.title), html: page.html };
+  return { game, title: page.title, url: pageUrl(page.title, game), html: page.html };
 }
 
 async function loadPage(title: string, options: WikiOptions): Promise<{ title: string; html: string }> {
+  const game = options.game ?? "poe1";
+  const sites = sitesFor(game);
   const direct = await requestParse(title, options);
   if (direct) {
     return direct;
@@ -114,22 +126,29 @@ async function loadPage(title: string, options: WikiOptions): Promise<{ title: s
   const hits = await search(title, 1, options);
   const fallback = hits[0];
   if (!fallback) {
-    throw new NotFoundError(`poewiki 没有「${title}」对应的页面。`, "换一个关键词，或直接用 search 命令查看候选条目。");
+    throw new NotFoundError(
+      `${sites.wikiName} 没有「${title}」对应的页面。`,
+      "换一个关键词，或直接用 search 命令查看候选条目。",
+    );
   }
 
   const resolved = await requestParse(fallback.title, options);
   if (!resolved) {
-    throw new NotFoundError(`poewiki 无法加载「${fallback.title}」。`, "该条目可能已被删除或重命名，可重新搜索。");
+    throw new NotFoundError(
+      `${sites.wikiName} 无法加载「${fallback.title}」。`,
+      "该条目可能已被删除或重命名，可重新搜索。",
+    );
   }
   return resolved;
 }
 
-export function pageUrl(title: string): string {
+export function pageUrl(title: string, game: Game = "poe1"): string {
+  const sites = sitesFor(game);
   const path = title
     .split("/")
     .map((segment) => encodeURIComponent(segment.replace(/ /g, "_")))
     .join("/");
-  return `${WIKI_ORIGIN}/wiki/${path}`;
+  return `${sites.wikiOrigin}/wiki/${path}`;
 }
 
 export function titleFromUrl(rawUrl: string): string | null {
@@ -149,17 +168,10 @@ export function titleFromUrl(rawUrl: string): string | null {
   }
 }
 
-function buildPage(parsed: { title: string; html: string }): WikiPage {
-  const url = pageUrl(parsed.title);
-  return {
-    title: parsed.title,
-    url,
-    markdown: htmlToMarkdown(parsed.html, { baseUrl: url }),
-  };
-}
-
 async function requestParse(title: string, options: WikiOptions): Promise<{ title: string; html: string } | null> {
-  const url = `${WIKI_API}?action=parse&page=${encodeURIComponent(title)}&prop=text&format=json&formatversion=2&redirects=1&disableeditsection=1&disabletoc=1`;
+  const game = options.game ?? "poe1";
+  const sites = sitesFor(game);
+  const url = `${sites.wikiApi}?action=parse&page=${encodeURIComponent(title)}&prop=text&format=json&formatversion=2&redirects=1&disableeditsection=1&disabletoc=1`;
   const response = await getText(url, {
     timeoutMs: options.timeoutMs,
     noCache: options.noCache,
@@ -167,7 +179,7 @@ async function requestParse(title: string, options: WikiOptions): Promise<{ titl
     accept: "application/json",
   });
 
-  const data = parseJson<ParseResponse>(response.body, url, pageUrl(title));
+  const data = parseJson<ParseResponse>(response.body, url, pageUrl(title, game), sites.wikiName);
 
   if (data.error) {
     const code = data.error.code ?? "";
@@ -175,7 +187,7 @@ async function requestParse(title: string, options: WikiOptions): Promise<{ titl
       return null;
     }
     throw new NetworkError(
-      `poewiki API 返回错误：${data.error.info ?? code ?? "未知错误"}`,
+      `${sites.wikiName} API 返回错误：${data.error.info ?? code ?? "未知错误"}`,
       "稍后重试，或改用 search 命令确认条目名称。",
     );
   }
@@ -183,7 +195,7 @@ async function requestParse(title: string, options: WikiOptions): Promise<{ titl
   if (!data.parse || typeof data.parse.text !== "string") {
     // 返回 200 但不是 MediaWiki 的 JSON 结构，通常是 Anubis 验证页的变体。
     throw new BlockedError(
-      `poewiki 返回的内容不是页面数据：${pageUrl(title)}`,
+      `${sites.wikiName} 返回的内容不是页面数据：${pageUrl(title, game)}`,
       "请求可能被反爬验证页替换，请稍后重试。",
     );
   }
@@ -194,17 +206,20 @@ async function requestParse(title: string, options: WikiOptions): Promise<{ titl
   };
 }
 
-function parseJson<T>(body: string, requestUrl: string, sourceHint: string): T {
+function parseJson<T>(body: string, requestUrl: string, sourceHint: string, siteName: string): T {
   try {
     return JSON.parse(body) as T;
   } catch {
     if (isBlockedBody(body) || (!body.includes("mw-parser-output") && !body.includes('"parse"'))) {
       throw new BlockedError(
-        `poewiki 返回了反爬验证页而不是数据：${sourceHint}`,
+        `${siteName} 返回了反爬验证页而不是数据：${sourceHint}`,
         "本工具已使用非浏览器 UA，若仍被拦截请稍后重试，或改用 --source poedb。",
       );
     }
-    throw new NetworkError(`poewiki 返回了无法解析的响应：${requestUrl}`, "稍后重试；若持续出现，请确认网络是否被代理改写。");
+    throw new NetworkError(
+      `${siteName} 返回了无法解析的响应：${requestUrl}`,
+      "稍后重试；若持续出现，请确认网络是否被代理改写。",
+    );
   }
 }
 

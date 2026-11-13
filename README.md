@@ -1,8 +1,9 @@
 # poe-wiki-cli
 
-给 AI agent 用的 Path of Exile 资料查询命令行：搜索、抓取 **poedb.tw** 与 **www.poewiki.net** 的页面，并转成干净、稳定的 markdown 或 JSON。
+给 AI agent 用的 Path of Exile 资料查询命令行：搜索、抓取 **poedb.tw / www.poewiki.net**（PoE1）与 **poe2db.tw / www.poe2wiki.net**（PoE2）的页面，并转成干净、稳定的 markdown 或 JSON。
 
 - 服务端渲染直取，不启动浏览器
+- PoE1 与 PoE2 双站支持，用 `--game poe2` 切换，默认 PoE1
 - 输出结构稳定，`--json` 直接可 `JSON.parse`
 - 失败原因用退出码区分：用法错误 / 未找到 / 被反爬拦截 / 网络错误
 - 本地文件缓存，重复查询不重复下载
@@ -76,6 +77,11 @@ poe-wiki-cli page Headhunter --source poedb
 poe-wiki-cli page "https://www.poewiki.net/wiki/Endgame" --json
 poe-wiki-cli league --patch
 poe-wiki-cli doctor
+
+# PoE2
+poe-wiki-cli search fireball --game poe2
+poe-wiki-cli page "https://poe2db.tw/us/Waystone"        # 按域名自动识别，无需 --game
+poe-wiki-cli league --game poe2
 ```
 
 ## 命令
@@ -100,9 +106,10 @@ poedb 未命中不算错误（poewiki 通常仍有结果）；两边都为空才
 
 | 选项 | 说明 |
 | --- | --- |
+| `-g, --game <poe1\|poe2>` | 资料库版本：poe1 → poedb/poewiki，poe2 → poe2db/poe2wiki，默认 `poe1` |
 | `-s, --source <both\|poedb\|wiki>` | 数据源，默认 `both` |
-| `-l, --lang <us\|tw\|cn\|kr\|ru\|jp\|fr\|de\|th\|pt\|sp>` | poedb 语言，默认按查询词推断 |
-| `-n, --limit <n>` | poewiki 结果上限，默认 8 |
+| `-l, --lang <us\|tw\|cn\|kr\|ru\|jp\|fr\|de\|th\|pt\|sp>` | 资料库语言，默认按查询词推断 |
+| `-n, --limit <n>` | wiki 结果上限，默认 8 |
 | `-j, --json` | 输出 JSON |
 | `--no-cache` | 跳过本地缓存 |
 | `--timeout <ms>` | 请求超时，默认 20000 |
@@ -111,9 +118,9 @@ poedb 未命中不算错误（poewiki 通常仍有结果）；两边都为空才
 
 抓取单个页面并输出 markdown。`target` 支持三种写法：
 
-- 完整 URL：`https://poedb.tw/cn/Headhunter`、`https://www.poewiki.net/wiki/Endgame`（站点由 host 决定）
-- 站点前缀：`poedb:Headhunter`、`wiki:Iron Reflexes`
-- 裸标题：默认先尝试 poedb，未命中再取 poewiki
+- 完整 URL：`https://poedb.tw/cn/Headhunter`、`https://www.poewiki.net/wiki/Endgame`、`https://poe2db.tw/us/Waystone`（站点与游戏版本都由 host 决定，会覆盖 `--game`）
+- 站点前缀：`poedb:Headhunter`、`wiki:Iron Reflexes`、`poe2db:Waystone`、`poe2wiki:Endgame`
+- 裸标题：默认先尝试 db 站，未命中再取 wiki
 
 ```bash
 $ poe-wiki-cli page Headhunter --source poedb
@@ -139,8 +146,9 @@ Requires Level 40
 
 | 选项 | 说明 |
 | --- | --- |
-| `-s, --source <auto\|both\|poedb\|wiki>` | 数据源，默认 `auto`（先 poedb 后 wiki 兜底） |
-| `-l, --lang <lang>` | poedb 语言，默认按标题推断 |
+| `-g, --game <poe1\|poe2>` | 资料库版本，默认 `poe1`；传 URL 时以 URL 为准 |
+| `-s, --source <auto\|both\|poedb\|wiki>` | 数据源，默认 `auto`（先 db 站后 wiki 兜底） |
+| `-l, --lang <lang>` | 资料库语言，默认按标题推断 |
 | `--max-chars <n>` | 正文上限，默认 40000；`--html` 时默认 0（不截断） |
 | `--raw` | 只输出正文，省略标题与元信息 |
 | `--sections` | 额外输出章节大纲（JSON 下为 `sections` 数组） |
@@ -152,14 +160,14 @@ Requires Level 40
 `--html` 与 `--raw` 互斥，同时使用会以退出码 1 结束。`--html` 的 JSON 字段是 `html` 而不是 `markdown`：
 
 ```json
-{ "ok": true, "source": "poedb", "title": "Home", "url": "https://poedb.tw/us/", "html": "<!DOCTYPE html>…", "truncated": false }
+{ "ok": true, "game": "poe1", "source": "poedb", "title": "Home", "url": "https://poedb.tw/us/", "html": "<!DOCTYPE html>…", "truncated": false }
 ```
 
-poewiki 的 `--html` 输出 `action=parse` 返回的 `parse.text` 片段。
+`source` 的取值是**实际站点**：`poedb` / `poewiki` / `poe2db` / `poe2wiki`，配合 `game` 字段就能确定数据来自哪一版游戏。poewiki 的 `--html` 输出 `action=parse` 返回的 `parse.text` 片段。
 
 ### `league`
 
-读取 poedb 首页的赛季卡片，给出当前/下一个赛季与版本汇总。
+读取资料库首页的赛季/版本卡片，给出当前/下一个赛季与版本汇总。PoE1 读 poedb 首页，PoE2 读 poe2db 首页（`--game poe2`）。
 
 ```bash
 $ poe-wiki-cli league
@@ -179,11 +187,34 @@ Tencent · poedb.tw/cn
 
 | 选项 | 说明 |
 | --- | --- |
+| `-g, --game <poe1\|poe2>` | 资料库版本，默认 `poe1` |
 | `--realm <both\|us\|cn>` | 服务器，默认 `both` |
 | `--patch` | 展开最新版本的汇总链接 |
 | `-j, --json` | 输出 JSON |
 | `--no-cache` | 跳过本地缓存 |
 | `--timeout <ms>` | 请求超时，默认 20000 |
+
+PoE2 的卡片语义不同：没有「赛季」，而是版本（`0.5.5`、`1.0`），并且当前版本会带一个结束时间。`--game poe2` 时：
+
+```bash
+$ poe-wiki-cli league --game poe2
+International · poe2db.tw/us
+  current   0.5.5  Forbidden Rites
+            running since  2026-09-04 20:00 UTC · 2026-09-05 04:00 (UTC+08:00)  (69d 11h)
+            ends           2026-12-11 20:00 UTC · 2026-12-12 04:00 (UTC+08:00)  in 28d 12h
+  next      1.0  Release
+            starts         2026-12-11 20:00 UTC · 2026-12-12 04:00 (UTC+08:00)  in 28d 12h
+  patch     1.0 Conquerors of Wraeclast
+
+Tencent · poe2db.tw/cn
+  current   0.5.5  禁断仪式
+            running since  2026-09-10 02:00 UTC · 2026-09-10 10:00 (UTC+08:00)  (64d 5h)
+            ends           2026-12-18 02:00 UTC · 2026-12-18 10:00 (UTC+08:00)  in 34d 18h
+  next      1.0  Release
+            starts         2026-12-18 02:00 UTC · 2026-12-18 10:00 (UTC+08:00)  in 34d 18h
+```
+
+两个服的 1.0 上线时间不同（国际服 12-11、腾讯服 12-18），这也是为什么排期必须现查。
 
 `--patch` 会把该服版本号最大的那张汇总卡展开：
 
@@ -229,17 +260,45 @@ JSON 结构：
 
 ### `doctor`
 
-依次探测两个站点，输出 URL、状态、耗时、是否被拦截、内容是否含预期标记。任一站不健康时退出码为 4。
+默认同时探测 PoE1 与 PoE2 的四个端点，输出 URL、状态、耗时、是否被拦截、内容是否含预期标记。任一端点不健康时退出码为 4。
+
+| 选项 | 说明 |
+| --- | --- |
+| `-g, --game <both\|poe1\|poe2>` | 探测范围，默认 `both` |
 
 ```bash
 $ poe-wiki-cli doctor
 poedb    ok   HTTP 200    563ms  page-content ✓  https://poedb.tw/us/
 poewiki  ok   HTTP 200   1520ms  generator ✓  https://www.poewiki.net/w/api.php?action=query&meta=siteinfo&format=json
+poe2db   ok   HTTP 200    498ms  page-content ✓  https://poe2db.tw/us/
+poe2wiki ok   HTTP 200    731ms  generator ✓  https://www.poe2wiki.net/w/api.php?action=query&meta=siteinfo&format=json
 ```
+
+## PoE2 支持
+
+`--game poe2` 会把两个数据源整体切到 PoE2：
+
+| | PoE1（默认） | PoE2 |
+| --- | --- | --- |
+| 数据站 | `poedb.tw` | `poe2db.tw` |
+| Wiki | `www.poewiki.net` | `www.poe2wiki.net` |
+
+两代用的是同一套平台（db 站同一套模板，wiki 都是 MediaWiki），所以解析、语言列表、缓存策略完全一致，差异只在内容。
+
+**术语不能照搬 PoE1**：
+
+- 宝石统一叫 **Gem**，升级/制作靠 **Uncut Skill Gem / Uncut Support Gem / Uncut Spirit Gem**
+- 异界地图是 **Waystone**（在 Map Device 激活），不是 map item
+- 新增资源 **Spirit**（保留给持续增益、永久召唤物、触发类 meta gem）
+- 天赋树页面标题是 **Passive Skill Tree**
+
+**索引页体量更大**：poe2db 的 `/us/Support_Gems` 约 3.6 MB、`/us/Skill_Gems` 约 2.1 MB。查具体条目，别整页拉。
+
+**赛季卡片语义不同**：PoE2 没有「赛季」，卡片是版本（`0.5.5`、`1.0`），当前版本额外带 `ends`，`next` 指向下一个大版本。详见上面 `league` 一节。
 
 ## 中文查询
 
-poedb 的搜索语言必须和站点 locale 一致，否则一定落回首页：`/cn/search?q=猎首` 命中 `/cn/Headhunter`，而 `/us/search?q=猎首` 只会回到 `/us/`。
+poedb / poe2db 的搜索语言必须和站点 locale 一致，否则一定落回首页：`/cn/search?q=猎首` 命中 `/cn/Headhunter`，而 `/us/search?q=猎首` 只会回到 `/us/`。
 
 因此本工具按查询词自动推断 locale：
 
@@ -287,7 +346,7 @@ JSON 与文本输出都会带上实际使用的 `locale`。注意 poedb 中文�
 
 ## 为什么不能用 Mozilla 开头的 UA
 
-poewiki.net 前置了 [Anubis](https://anubis.techaro.lol/) 反爬，策略是**只挑战 `Mozilla/` 前缀的 User-Agent**。用浏览器 UA 请求时，服务端返回的是 HTTP **200** 的 7.5KB 验证页，正文是 `Making sure you're not a bot!`，而不是真页面——只看状态码会以为请求成功。
+poewiki.net 与 poe2wiki.net 都前置了 [Anubis](https://anubis.techaro.lol/) 反爬，策略是**只挑战 `Mozilla/` 前缀的 User-Agent**。用浏览器 UA 请求时，服务端返回的是 HTTP **200** 的 7.5KB 验证页，正文是 `Making sure you're not a bot!`，而不是真页面——只看状态码会以为请求成功。
 
 非 Mozilla 前缀的 UA（`curl/8.4.0`、`python-httpx/0.27.0`、自定义 `Xxx/1.0`）反而直接拿到完整页面。poedb.tw 对 UA 不敏感。所以本工具统一使用：
 

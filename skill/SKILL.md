@@ -1,13 +1,27 @@
 ---
 name: poe-wiki-cli
-description: Query Path of Exile reference sites from the shell — poedb.tw for structured game data (skill gems, support gems, unique items, modifiers, maps, divination cards, keywords) and poewiki.net for mechanics prose, plus per-realm league schedules (international us / Tencent cn). Use when you need exact in-game numbers, confirmation of an item or skill gem's stats, a clean markdown copy of a wiki page, or the current and upcoming league dates. Supports Chinese and English queries, markdown or JSON output.
+description: Query Path of Exile reference sites from the shell — PoE1 (poedb.tw, poewiki.net) and PoE2 (poe2db.tw, poe2wiki.net) — for structured game data (gems, unique items, modifiers, waystones/maps, divination cards, keywords), mechanics prose, and per-realm league or patch schedules (international us / Tencent cn). Use when you need exact in-game numbers, confirmation of an item or gem's stats, a clean markdown copy of a wiki page, or current and upcoming version dates. Switch games with --game poe2; supports Chinese and English queries, markdown or JSON output.
 ---
 
 # poe-wiki-cli
 
 One command to query the two Path of Exile reference sites, returning clean markdown or JSON. Both sites are server-rendered: no browser, no API key.
 
+## Pick the game first
+
+```
+--game poe1   (default)  poedb.tw + www.poewiki.net
+--game poe2              poe2db.tw + www.poe2wiki.net
+```
+
+- The flag applies to every command: `search`, `page`, `league`, `doctor`.
+- `page` with a full URL infers the game from the host and **overrides** `--game`; prefixes `poe2db:` and `poe2wiki:` also work.
+- Output always carries `game`, and `source` reports the actual site (`poedb` / `poewiki` / `poe2db` / `poe2wiki`), so a URL can never be ambiguous.
+- Both generations share the same platform: same locales, same search semantics, same cache layout. Only the content and vocabulary differ — see [Path of Exile 2](#path-of-exile-2).
+
 ## Which source to use
+
+Throughout this skill, **`poedb` means the db site of the selected game** (`poedb.tw` or `poe2db.tw`) and **`wiki` means its wiki** (`poewiki.net` or `poe2wiki.net`). The choice of source does not change with the game; only the vocabulary does.
 
 | You need | Use |
 |---|---|
@@ -35,9 +49,10 @@ If `doctor` reports the wiki as blocked (exit code 3), something on the network 
 ```bash
 poe-wiki-cli search fireball
 poe-wiki-cli search "chaos orb" --limit 5
-poe-wiki-cli search 猎首                  # Chinese → poedb cn locale
+poe-wiki-cli search 猎首                  # Chinese → cn locale
 poe-wiki-cli search "life leech" --source wiki
 poe-wiki-cli search fireball --json
+poe-wiki-cli search fireball --game poe2  # PoE2: poe2db + poe2wiki
 ```
 
 Notes:
@@ -58,6 +73,8 @@ poe-wiki-cli page Endgame --sections               # list headings before readin
 poe-wiki-cli page "Skill_Gems" --max-chars 8000    # cap a very large index page
 poe-wiki-cli page Headhunter --raw                 # drop the metadata header
 poe-wiki-cli page "https://poedb.tw/us/" --html    # raw HTML instead of markdown (untruncated by default)
+poe-wiki-cli page Waystone --game poe2             # PoE2 db page
+poe-wiki-cli page "https://poe2wiki.net/wiki/Endgame"   # game inferred from host
 ```
 
 Output shape:
@@ -72,7 +89,7 @@ Output shape:
 
 - The body is converted markdown: headings, lists and tables survive; navigation, ads, scripts and images are stripped.
 - Bodies longer than `--max-chars` (default 40000) are truncated with an explicit notice at the end — nothing disappears silently.
-- Index pages are enormous (`/us/Skill_Gems` is over 1 MB of HTML, `/us/Divination_Cards` 665 KB). **Search for the specific entry instead of pulling the whole page**, or cap it with `--max-chars`.
+- Index pages are enormous (`/us/Skill_Gems` on poedb is over 1 MB; on poe2db `/us/Support_Gems` is ~3.6 MB and `/us/Skill_Gems` ~2.1 MB). **Search for the specific entry instead of pulling the whole page**, or cap it with `--max-chars`.
 
 ### doctor
 
@@ -109,6 +126,20 @@ Tencent · poedb.tw/cn
 - Relative times (`in 2h 41m`, `105d`) are computed at render time. The timers are honest about what poedb shows — `Realm down` is when the realm goes offline, `Starts in` is the launch itself; they are not the same moment.
 - `--patch` expands only the **newest** patch card's link groups (News, Mechanism, Currency, Item — localised to 新闻/机制/通货/物品 on `cn`); without it you still get a one-line `patch 3.30 Covens`.
 - Cached for 5 minutes only — league dates change and stale countdowns are worse than a refetch.
+
+With `--game poe2` the cards are **game versions, not leagues**, and the running card also reports when it ends. Same schema, extra `ends` field:
+
+```
+International · poe2db.tw/us
+  current   0.5.5  Forbidden Rites
+            running since  2026-09-04 20:00 UTC  (69d 11h)
+            ends           2026-12-11 20:00 UTC  in 28d 12h
+  next      1.0  Release
+            starts         2026-12-11 20:00 UTC  in 28d 12h
+  patch     1.0 Conquerors of Wraeclast
+```
+
+The two realms do not share dates — right now international moves to 1.0 on 2026-12-11 while Tencent waits until 2026-12-18 — so never infer one from the other.
 
 #### When `league` parsing fails
 
@@ -147,15 +178,15 @@ Every command accepts `--json` and prints a single JSON object:
 
 ```jsonc
 // search
-{ "ok": true, "query": "fireball", "locale": "us",
+{ "ok": true, "game": "poe1", "query": "fireball", "locale": "us",
   "results": [ { "source": "poedb", "kind": "page", "title": "Fireball",
-                 "url": "https://poedb.tw/us/Fireball" },
+                 "url": "https://poedb.tw/us/Fireball", "game": "poe1" },
                { "source": "poewiki", "kind": "search", "title": "Fireball",
                  "url": "https://www.poewiki.net/wiki/Fireball",
                  "snippet": "Fireball is a spell that ...", "size": 0, "wordcount": 0 } ] }
 
 // page
-{ "ok": true, "source": "poewiki", "title": "Endgame",
+{ "ok": true, "game": "poe1", "source": "poewiki", "title": "Endgame",
   "url": "https://www.poewiki.net/wiki/Endgame",
   "fetchedAt": "2026-11-13T12:00:00.000Z",
   "markdown": "...", "truncated": false, "originalChars": 11074 }
@@ -164,10 +195,12 @@ Every command accepts `--json` and prints a single JSON object:
 { "ok": false, "error": { "code": "BLOCKED", "message": "...", "hint": "..." } }
 ```
 
+`source` names the **actual site**, so `--game poe2` yields `poe2db` / `poe2wiki` instead of `poedb` / `poewiki`. `game` is present on every successful payload and on each search result.
+
 `league` returns one entry per realm; `current`, `next` and `patch` are omitted when the homepage does not have them:
 
 ```jsonc
-{ "ok": true, "fetchedAt": "...",
+{ "ok": true, "game": "poe1", "fetchedAt": "...",
   "realms": [ { "realm": "cn", "server": "tencent", "locale": "cn",
                 "url": "https://poedb.tw/cn/",
                 "current": { "name": "Curse of the Allflame", "version": "3.29",
@@ -192,6 +225,8 @@ Every command accepts `--json` and prints a single JSON object:
 
 Use these exact terms — they are the page titles on poewiki and the section names on poedb, so they are also the best search keywords.
 
+### Path of Exile 1
+
 | Term | What it is | Where to read |
 |---|---|---|
 | skill gem | item class that grants skills when socketed; called *Active Skill Gems* in item filters | wiki `Skill gem`, poedb `/us/Skill_Gems` |
@@ -211,6 +246,30 @@ Use these exact terms — they are the page titles on poewiki and the section na
 | mastery | special passive choice available after a cluster's notable | wiki `Mastery` |
 | ascendancy class | subclass chosen after the Labyrinth | wiki `Ascendancy class` |
 | vendor recipe system | selling specific item combinations to vendors for currency/gear | wiki `Vendor recipe system` |
+
+### Path of Exile 2
+
+PoE2 renames or replaces several PoE1 concepts. Using PoE1 vocabulary here sends you to pages that do not exist.
+
+| Term | What it is | Where to read |
+|---|---|---|
+| gem | umbrella item class; skill gems grant skills, support gems modify them | wiki `Gem`, poe2db `/us/Gem` |
+| skill gem | a gem that grants an active skill | wiki `Gem` (section *Skill gems*), poe2db `/us/Skill_Gems` |
+| support gem | a gem that modifies a skill it is socketed into | wiki `Gem` (section *Support gems*), poe2db `/us/Support_Gems` |
+| uncut skill gem / uncut support gem / uncut spirit gem | the droppable, level-scalable items used to obtain gems (PoE2 has no gem XP) | wiki `Uncut Skill Gem`, `Uncut Support Gem`, `Uncut Spirit Gem`, `Uncut gem` |
+| waystone | item consumed in the Map Device to open an endgame map | wiki `Waystone`, poe2db `/us/Waystones` |
+| spirit | resource reserved for persistent buffs, permanent minions and trigger meta gems | wiki `Spirit` |
+| passive skill tree | the shared tree; the page title is capitalised | wiki `Passive Skill Tree`, poe2db `/us/Passive_Skill_Tree` |
+| ascendancy class | subclass unlocked through ascendancy trials | wiki `Ascendancy class` |
+| modifier | item/area stat, implicit vs explicit | wiki `Modifier`, poe2db `/us/Modifiers` |
+| divination card | collectible card exchanged for a reward | wiki `Divination card`, poe2db `/us/Divination_Cards` |
+
+Traps specific to PoE2:
+
+- `Skill gem` and `Support gem` are **redirects** into `Gem`; do not cite them as page titles.
+- There is no `Thread` page in PoE2 — that mechanic is PoE1-only.
+- `Item level` redirects into `Item`; `Keyword` redirects to `Category:Keywords`.
+- Index pages are much larger than PoE1: `/us/Support_Gems` is ~3.6 MB of HTML and `/us/Skill_Gems` ~2.1 MB. Search for the entry, or cap with `--max-chars`.
 
 ## Caching
 
@@ -254,3 +313,13 @@ poe-wiki-cli league --patch                      # plus what the patch actually 
 ```
 
 Never answer league dates from memory — the two realms run different versions (Tencent lags behind international), and poedb's homepage is the only place both schedules are stated together.
+
+**6. PoE2 questions**
+
+```bash
+poe-wiki-cli search "uncut skill gem" --game poe2
+poe-wiki-cli page Waystone --game poe2
+poe-wiki-cli league --game poe2
+```
+
+Do not carry PoE1 vocabulary over: PoE2 says **gem** / **uncut gem**, **waystone** (not map), **spirit**, and **Passive Skill Tree**. A PoE1 term will often still return a page — a wrong or empty one — which is worse than a miss.

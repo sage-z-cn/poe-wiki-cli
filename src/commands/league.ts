@@ -1,6 +1,8 @@
 import { fetchLeague, type Realm, type RealmInfo } from "../sources/league.js";
+import { sitesFor, type Game } from "../sites.js";
 
 export interface LeagueOptions {
+  game: Game;
   realms: Realm[];
   patch: boolean;
   timeoutMs: number;
@@ -8,15 +10,19 @@ export interface LeagueOptions {
 }
 
 export interface LeagueReport {
+  game: Game;
   fetchedAt: string;
   realms: RealmInfo[];
 }
 
 export async function runLeague(options: LeagueOptions): Promise<LeagueReport> {
+  const sites = sitesFor(options.game);
+
   const realms = await Promise.all(
     options.realms.map(async (realm): Promise<RealmInfo> => {
       try {
         return await fetchLeague(realm, {
+          game: options.game,
           timeoutMs: options.timeoutMs,
           noCache: options.noCache,
           includeSections: options.patch,
@@ -24,17 +30,18 @@ export async function runLeague(options: LeagueOptions): Promise<LeagueReport> {
       } catch (error) {
         // 单服失败不应让整条命令失败：保留占位信息，由调用方决定退出码。
         return {
+          game: options.game,
           realm,
           server: realm === "cn" ? "tencent" : "international",
           locale: realm,
-          url: `https://poedb.tw/${realm}/`,
+          url: `${sites.dbOrigin}/${realm}/`,
           warnings: [`fetch failed: ${error instanceof Error ? error.message : String(error)}`],
         };
       }
     }),
   );
 
-  return { fetchedAt: new Date().toISOString(), realms };
+  return { game: options.game, fetchedAt: new Date().toISOString(), realms };
 }
 
 export function leagueExitCode(report: LeagueReport): number {
@@ -49,7 +56,10 @@ export function leagueExitCode(report: LeagueReport): number {
   }
 
   const allFetchFailed = realms.every(
-    (realm) => realm.warnings !== undefined && realm.warnings.length > 0 && realm.warnings.every((warning) => warning.startsWith("fetch failed")),
+    (realm) =>
+      realm.warnings !== undefined &&
+      realm.warnings.length > 0 &&
+      realm.warnings.every((warning) => warning.startsWith("fetch failed")),
   );
 
   return allFetchFailed ? 4 : 2;

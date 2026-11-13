@@ -1,19 +1,20 @@
 import { getText } from "../http.js";
 import { decodeHtmlEntities, htmlToMarkdown, sanitizeHtml } from "../markdown.js";
+import { sitesFor, type Game } from "../sites.js";
 import { LANGUAGES, type Lang } from "../types.js";
-
-export const POEDB_ORIGIN = "https://poedb.tw";
 
 const PAGE_TTL_SECONDS = 3600;
 const SEARCH_TTL_SECONDS = 300;
 
 export interface PoedbOptions {
+  game?: Game;
   lang?: Lang;
   timeoutMs?: number;
   noCache?: boolean;
 }
 
 export interface PoedbSearchHit {
+  game: Game;
   title: string;
   url: string;
   html: string;
@@ -21,6 +22,7 @@ export interface PoedbSearchHit {
 }
 
 export interface PoedbPage {
+  game: Game;
   title: string;
   url: string;
   locale: Lang;
@@ -28,6 +30,7 @@ export interface PoedbPage {
 }
 
 export interface PoedbHtmlPage {
+  game: Game;
   title: string;
   url: string;
   locale: Lang;
@@ -79,12 +82,14 @@ export function isMissUrl(finalUrl: URL | string, lang: Lang): boolean {
  * 「原样 → 全小写」依次尝试，任一变体命中即返回。
  */
 export async function resolve(query: string, options: PoedbOptions = {}): Promise<PoedbSearchHit | null> {
+  const game = options.game ?? "poe1";
+  const sites = sitesFor(game);
   const locale = inferLang(query, options.lang);
   const base = query.trim();
   const variants = [...new Set([base, base.toLowerCase()].filter(Boolean))];
 
   for (const variant of variants) {
-    const searchUrl = `${POEDB_ORIGIN}/${locale}/search?q=${encodeURIComponent(variant)}`;
+    const searchUrl = `${sites.dbOrigin}/${locale}/search?q=${encodeURIComponent(variant)}`;
     const response = await getText(searchUrl, {
       timeoutMs: options.timeoutMs,
       noCache: options.noCache,
@@ -100,6 +105,7 @@ export async function resolve(query: string, options: PoedbOptions = {}): Promis
     const segments = finalUrl.pathname.split("/").filter(Boolean);
     const slug = decodeURIComponent(segments.slice(1).join("/")).replace(/_/g, " ");
     return {
+      game,
       title: extractTitle(response.body, slug),
       url: finalUrl.href,
       html: response.body,
@@ -111,6 +117,7 @@ export async function resolve(query: string, options: PoedbOptions = {}): Promis
 }
 
 export async function fetchPage(url: string, options: PoedbOptions = {}): Promise<PoedbPage> {
+  const game = options.game ?? "poe1";
   const response = await getText(url, {
     timeoutMs: options.timeoutMs,
     noCache: options.noCache,
@@ -124,10 +131,11 @@ export async function fetchPage(url: string, options: PoedbOptions = {}): Promis
   const title = extractTitle(response.body, slug);
   const markdown = htmlToMarkdown(container, { baseUrl: response.url });
 
-  return { title, url: response.url, locale, markdown };
+  return { game, title, url: response.url, locale, markdown };
 }
 
 export async function fetchPageHtml(url: string, options: PoedbOptions = {}): Promise<PoedbHtmlPage> {
+  const game = options.game ?? "poe1";
   const response = await getText(url, {
     timeoutMs: options.timeoutMs,
     noCache: options.noCache,
@@ -137,6 +145,7 @@ export async function fetchPageHtml(url: string, options: PoedbOptions = {}): Pr
 
   const locale = localeFromUrl(response.url) ?? options.lang ?? inferLang(url);
   return {
+    game,
     title: extractTitle(response.body, slugFromUrl(response.url)),
     url: response.url,
     locale,
