@@ -1,6 +1,6 @@
 ---
 name: poe-wiki-cli
-version: 0.3.0
+version: 0.4.0
 description: Query Path of Exile reference sites from the shell — PoE1 (poedb.tw, poewiki.net) and PoE2 (poe2db.tw, poe2wiki.net) — for structured game data (gems, unique items, modifiers, waystones/maps, divination cards, keywords), mechanics prose, and per-realm league or patch schedules (international us / Tencent cn). Use when you need exact in-game numbers, confirmation of an item or gem's stats, a clean markdown copy of a wiki page, or current and upcoming version dates. Switch games with --game poe2; supports Chinese and English queries, markdown or JSON output.
 ---
 
@@ -251,6 +251,31 @@ Use these exact terms — they are the page titles on poewiki and the section na
 | mastery | special passive choice available after a cluster's notable | wiki `Mastery` |
 | ascendancy class | subclass chosen after the Labyrinth | wiki `Ascendancy class` |
 | vendor recipe system | selling specific item combinations to vendors for currency/gear | wiki `Vendor recipe system` |
+
+### Chinese community shorthand
+
+Players rarely use the official Chinese names. These nicknames are **built into the CLI** — `page 祭坛` resolves straight to `/cn/Ritual`, so pass the nickname as-is. The table is here so you can recognise which mechanic a player means and pick the right page.
+
+| Nickname | Official Chinese | poedb slug | wiki (English) |
+|---|---|---|---|
+| 祭坛 | 驱灵仪式 | `Ritual` | `Ritual` |
+| 采棉花 | 庄园 | `Harvest` | `Harvest` |
+| 黄棉花 | 活性黄晶命能 | `Vivid_Crystallised_Lifeforce` | `Vivid Crystallised Lifeforce` |
+| 蓝棉花 | 原始蓝晶命能 | `Primal_Crystallised_Lifeforce` | `Primal Crystallised Lifeforce` |
+| 紫棉花 | 狂野紫晶命能 | `Wild_Crystallised_Lifeforce` | `Wild Crystallised Lifeforce` |
+| 黄金港 | 夺宝奇兵 | `Heist` | `Heist` |
+| 挖坟 | 先祖秘藏 | `Expedition` | `Expedition` |
+| 野兽 | 猎魔 | `Bestiary` | `Bestiary` |
+| 下矿 | 地心探索 | `Delve` | `Delve` |
+| 厕所 / 圣所 / 禁域 | 禁域 | `Sanctum` | `Sanctum` |
+
+Notes:
+
+- 采棉花 is the Harvest mechanic; the 棉花 colour nicknames are the three lifeforce currencies, not the mechanic. Ask which one is meant before assuming.
+- 禁域 and 圣所 are both in use for the same mechanic; poedb's page title is 禁域.
+- 地心探索's poedb page title is shortened to 地心, but the homepage link label is 地心探索 — either resolves.
+- 野兽 is the one nickname that must go through the alias table: taken literally it matches an unrelated monster-category page (`Beast`). The CLI maps it to 猎魔 / `Bestiary`, which is what players mean.
+- Scarabs (圣甲虫) were removed from the game. poedb's dictionary still carries 116 `Scarab` entries whose pages all 404, so never use a `*_Scarab*` slug as a target; `Mavens_Chisel_of_Scarabs` (plural) is a live page but is currency, not the mechanic.
 
 ### Path of Exile 2
 

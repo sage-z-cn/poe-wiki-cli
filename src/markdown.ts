@@ -161,6 +161,26 @@ export function sanitizeHtml(html: string): string {
   return out.join("");
 }
 
+/**
+ * 抽出 div.page-content[role=main] 的内部 HTML。poedb 的页面存在多余的
+ * </div>，直接用解析器找容器会被提前闭合，所以按字符位置切到 <footer 之前，
+ * 再交给 markdown 转换器（多余的闭合标签不会丢内容）。
+ *
+ * 放在这里而不是 sources/poedb.ts，是因为首页锚文本索引也要用它，
+ * 而 dict 模块不应反向依赖具体的站点实现。
+ */
+export function extractPageContent(html: string): string {
+  const sanitized = sanitizeHtml(html);
+  const opening = /<div\b[^>]*\bclass="[^"]*\bpage-content\b[^"]*"[^>]*>/i.exec(sanitized);
+  if (!opening) {
+    return sanitized;
+  }
+  const start = opening.index + opening[0].length;
+  const footerIndex = sanitized.indexOf("<footer", start);
+  const end = footerIndex === -1 ? sanitized.length : footerIndex;
+  return sanitized.slice(start, end);
+}
+
 export function htmlToMarkdown(html: string, options: MarkdownOptions = {}): string {
   const root = parse(sanitizeHtml(html), { comment: false });
   const context: RenderContext = {

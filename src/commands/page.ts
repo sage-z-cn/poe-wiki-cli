@@ -1,6 +1,12 @@
 import { NotFoundError, UsageError } from "../http.js";
-import { resolveAlias } from "../aliases.js";
-import { resolveDictSlug } from "../dict.js";
+import { resolveAlias, resolveOrphanSlug } from "../aliases.js";
+import {
+  isRetiredSlug,
+  loadNameSources,
+  lookupDict,
+  lookupNav,
+  type NameSources,
+} from "../dict.js";
 import { extractSections } from "../markdown.js";
 import {
   fetchPage as fetchPoedbPage,
@@ -153,7 +159,7 @@ async function load(parsed: Target, options: PageOptions): Promise<LoadedPage> {
     return loadWikiTitle(parsed.title, game, options, common);
   }
 
-  const dictAttempt = await loadDbByDictOrAlias(parsed.title, game, options, common);
+  const dictAttempt = await loadDbByNameIndex(parsed.title, game, options, common);
   if (dictAttempt.page) {
     return dictAttempt.page;
   }
@@ -196,15 +202,13 @@ async function loadDbByDirectSlug(
   options: PageOptions,
   common: { timeoutMs: number; noCache: boolean },
 ): Promise<LoadedPage | null> {
-  if (HAN_PATTERN.test(title)) {
-    return null;
-  }
-
   const trimmed = title.trim();
   if (!trimmed) {
     return null;
   }
 
+  // 含汉字的标题也试一次：poedb 的中文页仍用英文 slug，拼出来必然 404，
+  // 但这一步成本极低，且能覆盖「用户直接给了中文标题、索引又缺项」的边角情况。
   const locale = inferLang(title, options.lang);
   const sites = sitesFor(game);
   const slug = trimmed.replace(/\s+/g, "_");
@@ -220,39 +224,88 @@ async function loadDbByDirectSlug(
 }
 
 /**
- * 中文标题先查本地词典，省掉一次搜索跳转。词典本身失败、未命中或页面 404
- * 都返回 null，由调用方继续走搜索逻辑。
+ * 中文标题先查本地索引，省掉一次搜索跳转。索引有三层：
+ * 自动补全词典覆盖具体条目（物品、宝石、天赋…），首页站内链接覆盖机制枢纽页
+ * （`致命贪婪 → Ultimatum`），孤岛页表覆盖两者都不指向的页面（`禁域 → Sanctum`）。
+ * 任何一层 404 都继续降级，不能把「页面已删除」当成「查不到这个名字」。
+ *
+ * 人工别名优先于索引：社区俗称往往恰好命中一个无关页面（`野兽` 会命中怪物分类页
+ * `Beast`，而玩家指的是 `Bestiary` 猎魔），只有别名表能表达这种语义。
  */
-async function loadDbByDict(
+async function loadDbByNameIndex(
+  title: string,
+  game: Game,
+  options: PageOptions,
+  common: { timeoutMs: number; noCache: boolean },
+): Promise<{ page: LoadedPage | null; effective: string; aliasUsed: boolean }> {
+  const alias = resolveAlias(title);
+  if (alias) {
+    const aliased = await loadDbByIndex(alias, game, options, common);
+    if (aliased) {
+      return { page: aliased, effective: alias, aliasUsed: true };
+    }
+  }
+
+  return { page: await loadDbByIndex(title, game, options, common), effective: title, aliasUsed: false };
+}
+
+async function loadDbByIndex(
   title: string,
   game: Game,
   options: PageOptions,
   common: { timeoutMs: number; noCache: boolean },
 ): Promise<LoadedPage | null> {
-  if (options.noDict || !HAN_PATTERN.test(title)) {
+  if (!HAN_PATTERN.test(title)) {
     return null;
   }
 
   const locale = inferLang(title, options.lang);
-  const slug = await resolveDictSlug(title, {
+  const sources = await loadNameSources({
     game,
     lang: locale,
     timeoutMs: options.timeoutMs,
     noCache: options.noCache,
+    skipDict: options.noDict,
   });
-  if (!slug) {
-    return null;
+
+  const slugs = resolveSlugs(sources, title);
+  for (const slug of slugs) {
+    if (isRetiredSlug(slug)) {
+      continue;
+    }
+    const sites = sitesFor(game);
+    try {
+      return await loadDbUrl(`${sites.dbOrigin}/${locale}/${slug}`, game, options, common, locale);
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        continue;
+      }
+      throw error;
+    }
   }
 
-  const sites = sitesFor(game);
-  try {
-    return await loadDbUrl(`${sites.dbOrigin}/${locale}/${slug}`, game, options, common, locale);
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      return null;
-    }
-    throw error;
+  return null;
+}
+
+/**
+ * 词典精确命中优先于首页链接：`法师之血` 在词典里是那条腰带，
+ * 而首页可能同时挂着别的同名链接。两层都只接受唯一候选，
+ * 多候选说明有歧义（如 `深渊` 同时是 Breach 与 Abyss），交给搜索与提示处理。
+ */
+function resolveSlugs(sources: NameSources, title: string): string[] {
+  const dictHit = sources.dict ? lookupDict(sources.dict, title) : null;
+  if (dictHit) {
+    return [dictHit.value];
   }
+
+  const navSlugs = lookupNav(sources.nav, title);
+  if (navSlugs.length > 0) {
+    return navSlugs;
+  }
+
+  // 最后看孤岛页表：这些页面存在，但首页与词典都不指向它们。
+  const orphan = resolveOrphanSlug(title);
+  return orphan ? [orphan] : [];
 }
 
 async function loadDbTitle(
@@ -263,7 +316,7 @@ async function loadDbTitle(
 ): Promise<LoadedPage> {
   const sites = sitesFor(game);
 
-  const dictAttempt = await loadDbByDictOrAlias(title, game, options, common);
+  const dictAttempt = await loadDbByNameIndex(title, game, options, common);
   if (dictAttempt.page) {
     return dictAttempt.page;
   }
@@ -287,33 +340,6 @@ async function loadDbTitle(
     `${sites.dbName} has no page for "${effective}" (locale: ${locale}).`,
     `${notFoundHint(effective, options.lang, sites.dbName)}${note}`,
   );
-}
-
-/**
- * 词典优先，未命中时才查别名表；别名只用于补充词典缺口，不能覆盖精确命中
- * （例如「女武神」「虚空」在词典里是真实物品名）。
- */
-async function loadDbByDictOrAlias(
-  title: string,
-  game: Game,
-  options: PageOptions,
-  common: { timeoutMs: number; noCache: boolean },
-): Promise<{ page: LoadedPage | null; effective: string; aliasUsed: boolean }> {
-  const direct = await loadDbByDict(title, game, options, common);
-  if (direct) {
-    return { page: direct, effective: title, aliasUsed: false };
-  }
-
-  const alias = resolveAlias(title);
-  if (!alias) {
-    return { page: null, effective: title, aliasUsed: false };
-  }
-
-  return {
-    page: await loadDbByDict(alias, game, options, common),
-    effective: alias,
-    aliasUsed: true,
-  };
 }
 
 function aliasNote(original: string, effective: string, used: boolean): string {

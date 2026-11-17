@@ -81,6 +81,8 @@ poe-wiki-cli league --game poe2
 
 By default both sites are queried: first poedb, which either redirects straight to a page (a single result) or answers with a server-rendered result page that is parsed into deduplicated candidates (`source: "poedb"`, `kind: "page"`); then the poewiki search API (`generator=search` + `prop=extracts`, which returns a plain-text intro taken from the start of the article in a single request).
 
+poedb's own site search does not index Chinese titles: `/cn/search?q=致命贪婪` simply redirects to `/cn/`. For Chinese queries the command therefore falls back to the local name index (see [Chinese-language queries](#chinese-language-queries)), which yields the same `kind: "page"` candidates.
+
 poedb candidates are listed in page order without ranking. That is deliberate: the first hit is not always the intended one — `希鲁斯` returns `希鲁斯风暴` before `诸界觉者希鲁斯`.
 
 ```bash
@@ -310,19 +312,28 @@ Both JSON and text output include the `locale` that was actually used. Note that
 
 ### Name dictionary
 
-When a Chinese bare title maps to exactly one page, `page` skips the search round-trip. It downloads poedb's autocomplete dictionary (`localized name → page slug`) and builds the `/{lang}/{slug}` URL directly. The dictionary is per language — `cn` has 7,186 entries (526 KB), `tw` 7,814 (568 KB), `us` 746 KB — and only the locale being queried is downloaded:
+When a Chinese bare title maps to exactly one page, `page` skips the search round-trip. Resolution uses two indexes that both come from data the site itself publishes, so they never drift from the current build:
 
-```
-poedb.tw/cn/  →  cdn.poedb.tw/js/poedb_header.<hash>.js  →  autocomplete_cn.<hash>.json
-```
+1. **Autocomplete dictionary** — poedb's `localized name → page slug` list, covering concrete entries (items, gems, passives…). Per language: `cn` has 7,186 entries (526 KB), `tw` 7,814 (568 KB), `us` 746 KB. Only the locale being queried is downloaded:
 
-The chain is discovered from the site itself, so the dictionary always matches the current build rather than a pinned copy. Cache TTLs: dictionary **20 hours**, header script 24 hours, homepage 1 hour.
+   ```
+   poedb.tw/cn/  →  cdn.poedb.tw/js/poedb_header.<hash>.js  →  autocomplete_cn.<hash>.json
+   ```
+
+2. **Homepage link index** — the same homepage request is reused to read every in-site link inside `div.page-content`, giving a `label → slug` map of the pages the site currently navigates to (465 links, 402 distinct Chinese labels). This is what covers mechanic hub pages the dictionary never lists: `致命贪婪 → Ultimatum`, `驱灵仪式 → Ritual`, `命运试炼 → Trial_of_the_Ancestors`.
+
+Both indexes require an **exact** match to resolve. Fuzzy matches are only ever offered as candidates, never followed: `圣甲虫` used to resolve to `Mavens_Chisel_of_Scarabs` purely because it was the single entry containing that substring.
+
+Cache TTLs: dictionary **20 hours**, header script 24 hours, homepage 1 hour. A published dictionary change also changes its hashed filename, so the homepage TTL — not the 20-hour one — is what bounds staleness.
 
 - Only applies to bare titles containing Han characters; URLs and `poedb:` / `poe2db:` prefixed targets are untouched.
-- Any failure (download, parse, 404 on the resulting slug) falls back silently to the normal search path.
-- `--no-dict` disables the shortcut.
+- Any failure (download, parse, 404 on the resulting slug) falls through to the next layer instead of aborting: dictionary → homepage index → site search → direct slug → wiki.
+- A slug that 404s is skipped and the remaining candidates are tried.
+- `--no-dict` disables the autocomplete dictionary only; the homepage index stays active.
+- Retired content is filtered at load time. Scarabs were removed from the game, so the dictionary snapshot still carries 116 `Scarab` entries whose pages all 404; they are dropped unless the slug is the plural `Scarabs` (e.g. `Mavens_Chisel_of_Scarabs`, still a live page).
 - The dictionary is PoE1 data. PoE2-only names (e.g. waystone) are missing, so those fall back to search.
-- A small curated alias table fills the gap for names the dictionary never carries — old translations and community shorthand such as `病人 → 病患`, `护理师 → 照料者`, `法血 → 法师之血`, `正火 → 正义之火`, `闪打 → 闪电打击`, `刀阵 → 飞刃风暴`. Aliases apply **only when the dictionary has no exact entry**, so genuine same-name items are never overridden: `女武神` stays the ring Valyrium, `虚空` stays the gloves Null and Void.
+- A curated alias table fills the gap for names neither index carries — old translations and community shorthand. It is checked **before** the indexes, because a nickname can accidentally match an unrelated page (`野兽` matches the monster category `Beast`, while players mean `Bestiary` 猎魔). Entries cover league mechanics (祭坛 → 驱灵仪式, 采棉花 → 庄园, 黄金港 → 夺宝奇兵, 挖坟 → 先祖秘藏, 野兽 → 猎魔, 下矿 → 地心探索, 厕所/圣所 → 禁域), the three Harvest lifeforce currencies (黄棉花 / 蓝棉花 / 紫棉花), and older item translations (`病人 → 病患`, `法血 → 法师之血`, `正火 → 正义之火`, `闪打 → 闪电打击`, `刀阵 → 飞刃风暴`). Aliases never override a genuine same-name item: `女武神` stays the ring Valyrium, `虚空` stays the gloves Null and Void.
+- A few pages exist but are linked from nowhere (`Sanctum` 禁域 has no homepage entry and no dictionary entry), so they are registered explicitly by official title.
 
 The first lookup in a 20-hour window downloads about 500 KB; later ones add no network cost.
 
