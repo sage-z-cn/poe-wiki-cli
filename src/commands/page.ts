@@ -1,4 +1,4 @@
-import { NotFoundError, UsageError } from "../http.js";
+import { BlockedError, NotFoundError, UsageError } from "../http.js";
 import { resolveAlias, resolveOrphanSlug } from "../aliases.js";
 import {
   isRetiredSlug,
@@ -30,6 +30,8 @@ export interface PageOptions {
   sections: boolean;
   html: boolean;
   noDict: boolean;
+  /** 只输出指定标题的章节（含其子章节）。匹配不到时报错并列出可用标题。 */
+  section?: string;
 }
 
 const HAN_PATTERN = /\p{Script=Han}/u;
@@ -78,7 +80,20 @@ export async function runPage(target: string, options: PageOptions): Promise<Pag
 
   const markdown = page.markdown ?? "";
   const sections = options.sections ? extractSections(markdown) : undefined;
-  const limited = truncate(markdown, options.maxChars, false);
+  const sectionBody = options.section ? sliceSection(markdown, options.section) : null;
+  if (options.section && !sectionBody) {
+    const available = extractSections(markdown);
+    const listed =
+      available.length > 0
+        ? available.map((section) => section.title).join(" | ")
+        : "(no sections found in this page)";
+    throw new UsageError(
+      `No section titled "${options.section}" in "${page.title}".`,
+      `Available sections: ${listed}`,
+    );
+  }
+  const body = sectionBody ?? markdown;
+  const limited = truncate(body, options.maxChars, false);
 
   const document: PageDocument = {
     game: page.game,
@@ -88,7 +103,7 @@ export async function runPage(target: string, options: PageOptions): Promise<Pag
     markdown: limited.text,
     fetchedAt,
     truncated: limited.truncated,
-    originalChars: markdown.length,
+    originalChars: body.length,
   };
 
   if (page.locale) {
@@ -181,8 +196,15 @@ async function load(parsed: Target, options: PageOptions): Promise<LoadedPage> {
   try {
     return await loadWikiTitle(effective, game, options, common);
   } catch (error) {
+    const sites = sitesFor(game);
+    if (error instanceof BlockedError) {
+      // poedb 未命中 + wiki 被限流：明确告知两边状态，而不是只报一边。
+      throw new NotFoundError(
+        `${sites.dbName} has no page for "${effective}", and ${sites.wikiName} is currently rate-limited.`,
+        `${sites.dbName} found nothing on its own. Wait 60-90s and retry for the ${sites.wikiName} fallback, or search the official English name.${note}`,
+      );
+    }
     if (error instanceof NotFoundError) {
-      const sites = sitesFor(game);
       throw new NotFoundError(
         `${sites.dbName} and ${sites.wikiName} have no page for "${effective}".`,
         `${notFoundHint(effective, options.lang, sites.dbName)}${note}`,
@@ -371,8 +393,50 @@ function throwIfAmbiguous(candidates: PoedbSearchHit[], title: string, game: Gam
 
 function notFoundHint(title: string, explicit: Lang | undefined, dbName: string): string {
   return inferLang(title, explicit) === "cn"
-    ? "Try a shorter keyword, or use the search command to see candidate titles."
+    ? "The name may not be in the local dictionary yet (recent patches add entries continuously); try the official English name or a web search."
     : `${dbName} search is case-sensitive; try a shorter English keyword, or pass --lang cn for Chinese titles.`;
+}
+
+/**
+ * 按标题切出单个章节（含子章节，直到同级或更高级的下一个标题为止）。
+ * 标题匹配忽略大小写与首尾空白；找不到返回 null，由调用方列出可用标题。
+ */
+export function sliceSection(markdown: string, sectionTitle: string): string | null {
+  const wanted = sectionTitle.trim().toLowerCase();
+  if (!wanted) {
+    return null;
+  }
+
+  const lines = markdown.split("\n");
+  let start = -1;
+  let startLevel = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[i]);
+    if (!match) {
+      continue;
+    }
+    if (match[2].trim().toLowerCase() === wanted) {
+      start = i;
+      startLevel = match[1].length;
+      break;
+    }
+  }
+
+  if (start < 0) {
+    return null;
+  }
+
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const match = /^(#{1,6})\s+/.exec(lines[i]);
+    if (match && match[1].length <= startLevel) {
+      end = i;
+      break;
+    }
+  }
+
+  return lines.slice(start, end).join("\n").trim() || null;
 }
 
 async function loadDbUrl(

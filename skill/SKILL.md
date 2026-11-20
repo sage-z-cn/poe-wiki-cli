@@ -1,6 +1,6 @@
 ---
 name: poe-wiki-cli
-version: 0.4.0
+version: 0.5.0
 description: Query Path of Exile reference sites from the shell — PoE1 (poedb.tw, poewiki.net) and PoE2 (poe2db.tw, poe2wiki.net) — for structured game data (gems, unique items, modifiers, waystones/maps, divination cards, keywords), mechanics prose, and per-realm league or patch schedules (international us / Tencent cn). Use when you need exact in-game numbers, confirmation of an item or gem's stats, a clean markdown copy of a wiki page, or current and upcoming version dates. Switch games with --game poe2; supports Chinese and English queries, markdown or JSON output.
 ---
 
@@ -77,6 +77,7 @@ poe-wiki-cli page "https://poedb.tw/us/" --html    # raw HTML instead of markdow
 poe-wiki-cli page Waystone --game poe2             # PoE2 db page
 poe-wiki-cli page "https://poe2wiki.net/wiki/Endgame"   # game inferred from host
 poe-wiki-cli page 猎首 --no-dict                    # skip the name dictionary
+poe-wiki-cli page "https://poedb.tw/cn/Version_3.30.0" --section "终局改动"   # ONE section of a huge page
 ```
 
 Output shape:
@@ -90,11 +91,42 @@ Output shape:
 ```
 
 - The body is converted markdown: headings, lists and tables survive; navigation, ads, scripts and images are stripped.
-- Bodies longer than `--max-chars` (default 40000) are truncated with an explicit notice at the end — nothing disappears silently.
-- Index pages are enormous (`/us/Skill_Gems` on poedb is over 1 MB; on poe2db `/us/Support_Gems` is ~3.6 MB and `/us/Skill_Gems` ~2.1 MB). **Search for the specific entry instead of pulling the whole page**, or cap it with `--max-chars`.
+- Bodies longer than `--max-chars` (default 40000) are truncated with an explicit notice at the end — nothing disappears silently. **Truncation always starts from character 0**; content in the middle of a huge page is unreachable via `--max-chars` alone.
+- `--section "<title>"` prints only that heading's content (including subsections). This is the way to read a specific part of a huge page (patch notes, index pages): a 32 KB patch-notes page reduces to ~6 KB for the one section you need. Title matching is case-insensitive; on a miss it exits with the full list of available section titles — combine with `--sections` to preview them first. Requires markdown output (not `--html`).
+- Index pages are enormous (`/us/Skill_Gems` on poedb is over 1 MB; on poe2db `/us/Support_Gems` is ~3.6 MB and `/us/Skill_Gems` ~2.1 MB). **Search for the specific entry instead of pulling the whole page**, or use `--section` / cap with `--max-chars`.
 - Chinese bare titles are resolved through a locally cached name dictionary (poedb autocomplete, 20-hour TTL) that maps 中文名 → page slug, which skips the search round-trip and its case-sensitivity quirks. Any failure falls back to search; `--no-dict` forces the search path. The dictionary is PoE1 data, so PoE2-only names (e.g. waystone) just fall back.
 - A small curated alias table covers names the dictionary never carries (old translations and community shorthand: `病人 → 病患`, `护理师 → 照料者`, `法血 → 法师之血`, `正火 → 正义之火`, `闪打 → 闪电打击`, `刀阵 → 飞刃风暴`). Aliases apply **only when the dictionary has no exact entry**, so genuine same-name items stay put — `女武神` is the ring Valyrium, `虚空` is the gloves Null and Void.
 - If the db site returns several candidates and none matches the title exactly, `page` **fails with the candidate list** instead of guessing. Re-run with `search`, or pass a full URL — for example `page 希鲁斯 --no-dict` reports `希鲁斯风暴` and `诸界觉者希鲁斯`, while the dictionary path resolves the intended one.
+
+### Handling rate limits (exit 3)
+
+poewiki/poe2wiki sit behind Cloudflare and intermittently answer 403 to bursts of requests. The CLI already retries once with a long delay and honours `Retry-After`, so a single 403 usually resolves itself. When it doesn't:
+
+1. **Switch source, don't stop**: `--source poedb` (or `poe2db`) keeps working when the wiki is limited — patch notes, league pages and item data are mirrored on the db site. `search --source both` degrades automatically: poedb results print with a `! wiki unavailable` warning instead of failing.
+2. **Wait 60–90 seconds, then retry** — the limit is per-burst, not a ban. Avoid hammering; repeated immediate retries extend the block.
+3. **Fall back to a web search** for wiki-only content (mechanics prose, version history) rather than retrying the CLI in a loop.
+
+Exit code 3 (`BLOCKED`) means exactly this situation; it is not a network problem on your side.
+
+### Reading large pages efficiently
+
+- First `--sections` to see the outline (always computed on the full body, never truncated).
+- Then `--section "<title>"` to pull just the part you need. Example: reading 「终局改动」 from `cn/Version_3.30.0` costs ~6 KB instead of the 32 KB full page.
+- For repeated keyword greps over one huge page (e.g. every mention of a term across patch notes), dump once to a temp file and grep it locally: `poe-wiki-cli page "https://poedb.tw/cn/Version_3.30.0" --raw > $env:TEMP\v330.md` then `Select-String -Path $env:TEMP\v330.md -Pattern "关键词" -Context 2,4`. The dump hits the 1-hour cache on every later read.
+- The cache stores the **full fetched body**, so changing `--max-chars`/`--section`/`--raw` between runs never triggers a new download.
+
+### Translation naming: two official Chinese tracks
+
+Chinese names differ between the Taiwan wiki (poedb `cn` locale) and the Tencent mainland client. Both are "official", but they are not the same words:
+
+| Concept | poedb cn (Taiwan) | Tencent CN client |
+|---|---|---|
+| Atlas anomalies | 輿圖異常 / 舆图异常 | 异界异象 |
+| Threads (scarab replacement) | 綢帶 / 绸带 | 丝线 |
+| Shaped Regions | 幻塑界域 | 塑造之域 |
+| Sanctum | 禁域 | 圣所（赛季名「圣所」） |
+
+When a Chinese query misses, try the **other track's name**, or the English official name — e.g. `圣堂宝库` is absent from the poedb dictionary but `Templar Vaults` resolves, and `塑造之域` misses while `幻塑界域` hits. Right after a major patch the dictionary itself lags (20-hour TTL, populated from poedb autocomplete); a miss on a brand-new name usually means "not indexed yet", not "page does not exist".
 
 ### doctor
 
@@ -223,7 +255,7 @@ Every command accepts `--json` and prints a single JSON object:
 | 0 | success | — |
 | 1 | bad usage | check `--help` and flag combinations |
 | 2 | not found | try another keyword, the other source, or the original Chinese/English name |
-| 3 | blocked by bot protection | check whether a proxy rewrites the UA; retry once; switch source |
+| 3 | blocked or rate-limited (403/429/bot page) | this is the site throttling you, not your network: switch to the other source, wait 60–90s, or web-search; see *Handling rate limits* above |
 | 4 | network or HTTP error | retry, or run `doctor` |
 
 ## Terminology
@@ -268,6 +300,8 @@ Players rarely use the official Chinese names. These nicknames are **built into 
 | 野兽 | 猎魔 | `Bestiary` | `Bestiary` |
 | 下矿 | 地心探索 | `Delve` | `Delve` |
 | 厕所 / 圣所 / 禁域 | 禁域 | `Sanctum` | `Sanctum` |
+| 柳条人 | 柳条人 | `Wickerman` | `Wickerman` |
+| 内脏 | 内脏 | `Viscera` | `Viscera` |
 
 Notes:
 

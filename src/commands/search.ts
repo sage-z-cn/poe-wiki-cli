@@ -1,4 +1,4 @@
-import { NotFoundError } from "../http.js";
+import { BlockedError, NotFoundError } from "../http.js";
 import { resolveAlias, resolveOrphanSlug } from "../aliases.js";
 import { isRetiredSlug, loadNameSources, lookupFuzzy, lookupNavFuzzy } from "../dict.js";
 import { inferLang, resolveDetailed as resolvePoedbDetailed } from "../sources/poedb.js";
@@ -20,47 +20,75 @@ export interface SearchOutcome {
   query: string;
   locale: Lang;
   results: SearchResult[];
+  /** 非致命问题（如某一源被限流）不阻断输出，记录在这里。 */
+  warnings?: string[];
 }
 
 export async function runSearch(query: string, options: SearchOptions): Promise<SearchOutcome> {
   const sites = sitesFor(options.game);
   const locale = inferLang(query, options.lang);
   const results: SearchResult[] = [];
+  const warnings: string[] = [];
 
   if (options.source !== "wiki") {
     results.push(...(await searchDb(query, locale, options)));
   }
 
   if (options.source !== "poedb") {
-    const hits = await searchWiki(query, options.limit, {
-      game: options.game,
-      timeoutMs: options.timeoutMs,
-      noCache: options.noCache,
-    });
-    for (const hit of hits.slice(0, options.limit)) {
-      results.push({
+    try {
+      const hits = await searchWiki(query, options.limit, {
         game: options.game,
-        source: sites.wikiName,
-        kind: "search",
-        title: hit.title,
-        url: hit.url,
-        snippet: hit.snippet,
-        size: hit.size,
-        wordcount: hit.wordcount,
+        timeoutMs: options.timeoutMs,
+        noCache: options.noCache,
       });
+      for (const hit of hits.slice(0, options.limit)) {
+        results.push({
+          game: options.game,
+          source: sites.wikiName,
+          kind: "search",
+          title: hit.title,
+          url: hit.url,
+          snippet: hit.snippet,
+          size: hit.size,
+          wordcount: hit.wordcount,
+        });
+      }
+    } catch (error) {
+      // both 模式下另一源正常时不整体失败；只查 wiki 时仍按原样抛错。
+      if (options.source === "wiki") {
+        throw error;
+      }
+      if (error instanceof BlockedError) {
+        warnings.push(`${sites.wikiName} is unavailable (${error.message})`);
+      } else {
+        throw error;
+      }
     }
   }
 
   if (results.length === 0) {
+    if (warnings.length > 0) {
+      throw new NotFoundError(
+        `No results for "${query}" from ${sites.dbName}; ${sites.wikiName} was unavailable (${warnings[0]}).`,
+        `${sites.dbName} returned nothing on its own. Wait 60-90s and retry to also search ${sites.wikiName}, or try another keyword.`,
+      );
+    }
     throw new NotFoundError(
       `No results for "${query}".`,
-      locale === "cn"
-        ? "Try a shorter keyword, or check the exact in-game name; poedb's own site search does not index Chinese titles."
-        : `${sites.dbName} search is case-sensitive; try a shorter English keyword.`,
+      locale === "cn" ? notFoundHintCn(options) : `${sites.dbName} search is case-sensitive; try a shorter English keyword.`,
     );
   }
 
-  return { game: options.game, query, locale, results };
+  return warnings.length > 0 ? { game: options.game, query, locale, results, warnings } : { game: options.game, query, locale, results };
+}
+
+/**
+ * 中文未命中基本发生在本地索引层（自动补全词典 + 首页链接），而非站内搜索——
+ * 提示要指向真正的原因：新版本词条可能还没进词典。
+ */
+function notFoundHintCn(options: SearchOptions): string {
+  const sites = sitesFor(options.game);
+  return `The name is not in the local dictionary or the ${sites.dbName} index; entries added in a recent patch may not be indexed yet. Try the official English name, --no-cache after the dictionary updates, or a web search.`;
 }
 
 /**

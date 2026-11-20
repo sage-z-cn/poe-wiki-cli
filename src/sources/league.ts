@@ -215,6 +215,26 @@ function collectCards(root: HTMLElement, locale: Lang, origin: string): CardInfo
   return cards;
 }
 
+/**
+ * cn 首页的版本汇总卡片偶尔混入未翻译的英文组标签（如 Mechanism），
+ * 输出前统一映射为本地化名称，与页面主体语言保持一致。
+ */
+const SECTION_LABELS_CN: Record<string, string> = {
+  news: "新闻",
+  mechanism: "机制",
+  currency: "通货",
+  item: "物品",
+  gem: "宝石",
+  unique: "传奇",
+};
+
+function localizeSectionLabel(label: string, locale: Lang): string {
+  if (locale !== "cn") {
+    return label;
+  }
+  return SECTION_LABELS_CN[label.trim().toLowerCase()] ?? label;
+}
+
 function collectSections(element: HTMLElement, locale: Lang, origin: string): LeagueSection[] {
   const sections: LeagueSection[] = [];
 
@@ -247,7 +267,7 @@ function collectSections(element: HTMLElement, locale: Lang, origin: string): Le
     }
 
     if (label && links.length > 0) {
-      sections.push({ label, links });
+      sections.push({ label: localizeSectionLabel(label, locale), links });
     }
   }
 

@@ -147,6 +147,7 @@ Requires Level 40
 | `--max-chars <n>` | Body length cap. Default 40000; with `--html` the default is 0 (no truncation) |
 | `--raw` | Print the body only, omitting the title and metadata |
 | `--sections` | Also print the section outline (exposed as a `sections` array in JSON) |
+| `--section <title>` | Print only the section with this heading (including subsections). On a miss, exits with the list of available section titles. Markdown output only |
 | `--no-dict` | Skip the local name dictionary and resolve Chinese titles through search instead |
 | `--html` | Print raw HTML without markdown conversion (scripts, styles, navigation and other noise are stripped) |
 | `-j, --json` | Emit JSON |

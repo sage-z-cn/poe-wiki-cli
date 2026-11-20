@@ -39,6 +39,7 @@ interface PageCliOptions extends CommonCliOptions {
   sections?: boolean;
   html?: boolean;
   dict?: boolean;
+  section?: string;
 }
 
 interface LeagueCliOptions extends CommonCliOptions {
@@ -102,11 +103,18 @@ async function main(): Promise<void> {
     .option("--html", "print raw HTML instead of markdown (scripts, styles and navigation are stripped)")
     .option("--sections", "also print a heading outline")
     .option("--no-dict", "skip the local name dictionary and always resolve through search")
+    .option("--section <title>", "print only the section with this heading (and its subsections); combined with --sections to list candidates first")
     .action(async (target: string, options: PageCliOptions) => {
       if (options.html === true && options.raw === true) {
         throw new UsageError(
           "--html and --raw cannot be used together.",
           "Drop --raw for raw HTML, or drop --html for markdown.",
+        );
+      }
+      if (options.html === true && options.section !== undefined) {
+        throw new UsageError(
+          "--section and --html cannot be used together.",
+          "Section filtering applies to markdown output; drop --html.",
         );
       }
 
@@ -127,6 +135,7 @@ async function main(): Promise<void> {
         sections: options.sections === true,
         html: options.html === true,
         noDict: options.dict === false,
+        section: options.section,
       });
       printPage(document, options.json === true, options.raw === true);
     });
@@ -205,6 +214,9 @@ function printSearch(outcome: SearchOutcome, json: boolean): void {
     if (result.snippet) {
       lines.push(`  ${result.snippet}`);
     }
+  }
+  for (const warning of outcome.warnings ?? []) {
+    lines.push("", `! ${warning}`);
   }
   process.stdout.write(`${lines.join("\n").trimEnd()}\n`);
 }

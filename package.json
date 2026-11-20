@@ -1,6 +1,6 @@
 {
   "name": "poe-wiki-cli",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Query Path of Exile knowledge from poedb.tw and poewiki.net in clean, machine-readable markdown.",
   "type": "module",
   "private": false,

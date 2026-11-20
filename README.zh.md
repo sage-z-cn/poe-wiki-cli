@@ -147,6 +147,7 @@ Requires Level 40
 | `--max-chars <n>` | 正文上限，默认 40000；`--html` 时默认 0（不截断） |
 | `--raw` | 只输出正文，省略标题与元信息 |
 | `--sections` | 额外输出章节大纲（JSON 下为 `sections` 数组） |
+| `--section <标题>` | 只输出该标题的章节（含子章节）。标题未命中时列出全部可用标题后退出。仅限 markdown 输出 |
 | `--no-dict` | 跳过本地名词词典，中文标题改走搜索解析 |
 | `--html` | 直接输出原始 HTML，不做 markdown 转换（会去掉脚本/样式/导航等噪声） |
 | `-j, --json` | 输出 JSON |

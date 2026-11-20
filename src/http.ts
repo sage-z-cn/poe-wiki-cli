@@ -11,7 +11,10 @@ export const USER_AGENT = `poe-wiki-cli/${VERSION} (+https://github.com/sage-z-c
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const RETRY_DELAYS_MS = [300, 900];
+/** 403/429 是瞬时限流，短重试只会火上浇油；给一次长等待的机会。 */
+const RATE_LIMIT_RETRY_DELAYS_MS = [4_000];
 const ANUBIS_MARKER = "Making sure you're not a bot";
+const CLOUDFLARE_MARKERS = ["Attention Required! | Cloudflare", "cdn-cgi/challenge-platform", "cf-chl-widget"];
 
 export type ErrorCode = "USAGE" | "NOT_FOUND" | "BLOCKED" | "NETWORK";
 
@@ -45,6 +48,26 @@ export class BlockedError extends CliError {
   }
 }
 
+/**
+ * 限流类拦截（403/429）：与内容验证页（Anubis/Cloudflare challenge）区分开，
+ * hint 给出「这是暂时性的、稍等再试」，而不是误导性的「检查你的网络」。
+ */
+export class RateLimitError extends BlockedError {
+  readonly retryAfterMs: number | null;
+
+  constructor(message: string, retryAfterMs: number | null, hint?: string) {
+    super(
+      message,
+      hint ??
+        (retryAfterMs !== null
+          ? `The site is rate-limiting requests; retry in about ${Math.ceil(retryAfterMs / 1000)}s. This is temporary, not a network problem.`
+          : "The site is rate-limiting requests; wait 60-90 seconds and retry. This is temporary, not a network problem."),
+    );
+    this.name = new.target.name;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 export class NetworkError extends CliError {
   readonly retryable: boolean;
 
@@ -72,7 +95,10 @@ export interface TextResponse {
 }
 
 export function isBlockedBody(body: string): boolean {
-  return body.includes(ANUBIS_MARKER);
+  if (body.includes(ANUBIS_MARKER)) {
+    return true;
+  }
+  return CLOUDFLARE_MARKERS.some((marker) => body.includes(marker));
 }
 
 export async function getText(url: string, options: FetchTextOptions = {}): Promise<TextResponse> {
@@ -106,7 +132,9 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
 
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+  // 常规错误走短重试序列；限流错误换长重试序列，只给一次机会。
+  for (let attempt = 0; ; attempt++) {
+    let retryDelays: readonly number[];
     try {
       const response = await fetch(url, {
         headers,
@@ -125,6 +153,12 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
           "Check the title spelling, or use the search command to find the right entry.",
         );
       }
+      if (response.status === 403 || response.status === 429) {
+        throw new RateLimitError(
+          `The site answered HTTP ${response.status} for ${url}`,
+          parseRetryAfterMs(response.headers.get("retry-after")),
+        );
+      }
       if (response.status >= 400) {
         throw new NetworkError(`Request failed with HTTP ${response.status}: ${url}`);
       }
@@ -137,32 +171,52 @@ export async function fetchText(url: string, options: FetchTextOptions = {}): Pr
 
       return { url: response.url || url, status: response.status, body };
     } catch (error) {
-      if (error instanceof CliError) {
+      if (error instanceof RateLimitError) {
+        retryDelays = RATE_LIMIT_RETRY_DELAYS_MS;
+      } else if (error instanceof CliError) {
         lastError = error;
-        if (error instanceof NetworkError && error.retryable && attempt < RETRY_DELAYS_MS.length) {
-          await sleep(RETRY_DELAYS_MS[attempt]);
-          continue;
+        if (error instanceof NetworkError && error.retryable) {
+          retryDelays = RETRY_DELAYS_MS;
+        } else {
+          throw error;
         }
-        throw error;
+      } else {
+        lastError = new NetworkError(
+          `Network request failed: ${url} (${describeError(error)}).`,
+          error instanceof Error && error.name === "TimeoutError"
+            ? "The request timed out. Retry with --timeout 30000 to allow more time."
+            : undefined,
+          true,
+        );
+        retryDelays = RETRY_DELAYS_MS;
       }
 
-      lastError = new NetworkError(
-        `Network request failed: ${url} (${describeError(error)}).`,
-        error instanceof Error && error.name === "TimeoutError"
-          ? "The request timed out. Retry with --timeout 30000 to allow more time."
-          : undefined,
-        true,
-      );
-
-      if (attempt < RETRY_DELAYS_MS.length) {
-        await sleep(RETRY_DELAYS_MS[attempt]);
-        continue;
+      if (attempt >= retryDelays.length) {
+        if (error instanceof RateLimitError) {
+          // 重试仍限流：抛回原错误，hint 已含等待建议。
+          throw error;
+        }
+        throw lastError ?? new NetworkError(`Network request failed: ${url}`);
       }
-      throw lastError;
+      await sleep(error instanceof RateLimitError ? Math.max(retryDelays[attempt], error.retryAfterMs ?? 0) : retryDelays[attempt]);
     }
   }
+}
 
-  throw lastError ?? new NetworkError(`Network request failed: ${url}`);
+/** Retry-After 既可能是秒数也可能是 HTTP 日期，日期时换算为毫秒差。 */
+function parseRetryAfterMs(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+  const date = Date.parse(value);
+  if (Number.isFinite(date)) {
+    return Math.max(0, date - Date.now());
+  }
+  return null;
 }
 
 function describeError(error: unknown): string {
